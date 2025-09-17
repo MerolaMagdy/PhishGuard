@@ -2,7 +2,7 @@ fastapi==0.116.2
 uvicorn[standard]==0.23.2
 python-multipart==0.0.20
 mail-parser==4.0.0
-tldextract==3.5.4
+tldextract==3.5.0
 reportlab==4.0.3
 requests==2.32.0
 plotly==5.17.0
