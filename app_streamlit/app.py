@@ -2,7 +2,7 @@ import streamlit as st
 import os
 import plotly.graph_objects as go
 import os
-from app_backend.analysis import run_analysis
+from analysis import run_analysis
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 
