@@ -1,9 +1,41 @@
 import streamlit as st
-import requests
 import os
 import plotly.graph_objects as go
+import os
+from analysis import run_analysis
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
 
-API_URL = "http://127.0.0.1:8000/analyze"
+def save_report_pdf(report, pdf_path):
+    styles = getSampleStyleSheet()
+    doc = SimpleDocTemplate(pdf_path)
+    story = []
+
+    story.append(Paragraph(f"Subject: {report['subject']}", styles['Title']))
+    story.append(Spacer(1,12))
+    story.append(Paragraph(f"From: {report['from']}", styles['Normal']))
+    story.append(Paragraph(f"Return-Path: {report['return_path']}", styles['Normal']))
+    story.append(Spacer(1,12))
+    story.append(Paragraph(f"Overall Risk: {report['overall_risk']} (Score: {report['risk_score']})", styles['Normal']))
+    story.append(Spacer(1,12))
+
+    story.append(Paragraph("Header Findings:", styles['Heading2']))
+    for h in report['header_findings']:
+        story.append(Paragraph(str(h), styles['Normal']))
+    story.append(Spacer(1,12))
+
+    story.append(Paragraph("Keyword Findings:", styles['Heading2']))
+    story.append(Paragraph(", ".join(report['keyword_findings'] or ["None"]), styles['Normal']))
+    story.append(Spacer(1,12))
+
+    story.append(Paragraph("Link Findings:", styles['Heading2']))
+    for lf in report['link_findings']:
+        story.append(Paragraph(f"{lf['link']} — {lf['reason']}", styles['Normal']))
+
+    doc.build(story)
+
+
+
 
 st.set_page_config(page_title="PhishGuard", layout="wide", page_icon="🛡️")
 st.markdown("<h1 style='color:#00e5ff'>PhishGuard — Phishing Email Analyzer</h1>", unsafe_allow_html=True)
@@ -23,18 +55,20 @@ def show_gauge(score):
     st.plotly_chart(fig, use_container_width=True)
 
 if uploaded_file:
-    with st.spinner("Uploading & analyzing..."):
-        files = {"file": (uploaded_file.name, uploaded_file.read(), "message/rfc822")}
-        try:
-            resp = requests.post(API_URL, files=files, timeout=30)
-            resp.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            st.error(f"Could not reach backend API: {e}")
-            st.info("تأكدي إنّ الـ backend (FastAPI) شغّال على http://127.0.0.1:8000")
-            st.stop()
+    with st.spinner("Analyzing email..."):
+        os.makedirs("uploads", exist_ok=True)
+        temp_path = os.path.join("uploads", uploaded_file.name)
+        # احفظ الملف موقتًا
+        with open(temp_path, "wb") as f:
+            f.write(uploaded_file.read())
 
-        data = resp.json()
-        report = data.get("report") or data
+        # شغّل التحليل مباشرة
+        report = run_analysis(temp_path)
+
+        # أنشئ ملف الـ PDF
+        pdf_path = temp_path + ".pdf"
+        save_report_pdf(report, pdf_path)
+
 
         st.success(f"Analysis complete — Risk: {report['overall_risk']} (Score: {report['risk_score']})")
         col1, col2 = st.columns([1,2])
@@ -58,9 +92,7 @@ if uploaded_file:
             for lf in report.get("link_findings") or []:
                 st.write(f"- {lf.get('link')} — {lf.get('reason')}")
 
-        pdf_path = data.get("pdf")
-        if pdf_path and os.path.exists(pdf_path):
-            with open(pdf_path, "rb") as f:
-                st.download_button("Download PDF Report", f, file_name=os.path.basename(pdf_path))
-        else:
-            st.info("No PDF available (backend may not have generated it).")
+        if os.path.exists(pdf_path):
+    with open(pdf_path, "rb") as f:
+        st.download_button("Download PDF Report", f, file_name=os.path.basename(pdf_path))
+
