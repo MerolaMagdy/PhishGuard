@@ -1,0 +1,15 @@
+From: "Security Team" <support@example.com>
+To: you@example.com
+Subject: Test Email for Parser
+Date: Thu, 17 Sep 2025 13:00:00 +0300
+Return-Path: fake@anotherdomain.com
+Content-Type: text/plain; charset="UTF-8"
+
+
+
+Hello,
+
+This is a simple test email.
+Please click this link to verify: http://192.168.1.50/login
+
+Thank you.

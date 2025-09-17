@@ -1,0 +1,145 @@
+Delivered-To: meroomagdy165@gmail.com
+Received: by 2002:a05:7010:16d5:b0:485:266e:6855 with SMTP id d21csp872028mdi;
+        Wed, 17 Sep 2025 03:04:34 -0700 (PDT)
+X-Received: by 2002:a05:600c:a02:b0:45d:f7cb:8954 with SMTP id 5b1f17b1804b1-46202a0e763mr14519265e9.9.1758103474589;
+        Wed, 17 Sep 2025 03:04:34 -0700 (PDT)
+ARC-Seal: i=1; a=rsa-sha256; t=1758103474; cv=none;
+        d=google.com; s=arc-20240605;
+        b=k373CsN7NeKKImEF+1RZbDieiHl9jbG3s22vH6QkejRc4KbfTzvrevD47fNDvpsaBe
+         F2R86ItAiilJdMgznajIM8eYLwS48SroBN+eN2g0T95E1AugyQfzo+pLLcF2n0Ee0lDo
+         VPCzpLaFmXK8lpwKTVyMOb3TeqIdEBZAUGtFPtB8Yfm4+NEUzGBlASB3KbGaYomdpXsX
+         kz3fzp1ikYUcajGVIVWhe4QJ9Ze6xTbvfMOuL9uaTX7o0g34f/wWD+DpPZvksx1Q5TSD
+         IpOV9rDDtm68aR56w0nZiRJJn0YG8frq/HUgYmpkk8D42Ac556xgmxzH4SVzA7Y5+9ZD
+         NGZA==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20240605;
+        h=mime-version:message-id:subject:reply-to:from:to:date
+         :dkim-signature;
+        bh=a600tbUziHUOqdEl/xQ5BhMSKQcgtUfUSV3pe2W5lx8=;
+        fh=obdPeMK2yhziOZ52Na7u0SGQm8SoVIt7Xp9OGh/9k1o=;
+        b=EBDwb7RNn0P8FO9qSpPAzAE2OHG9x3UgASPu7HfyGEivOu/qZ4SNXfk1Ev2PTpmOwV
+         ub4wFxptMTSekkhiwW7fT5seMzXRBLn9j8g5MIlWnjTcNFSekbx+IxjSgGyrsY4/AQ4A
+         6DPkzyYY8GWNq6t+by7mZ6+vm1xYQeRitNygtNcSR0O6y2qg/pBMTj+GCW3AV0PFhYRO
+         OpqUp9JcZZV7g1no51jPYS28njPYR12bRSf8MQgU5WXd1AbG7srRaYJppl8J7sOH0T93
+         3JcYl4ECgNaspmax3k4Ld8yvDt5mX9DhZUF95MZUEWTsBpm3ByhBw9sNhu9Vu2Xzv3Er
+         RUNg==;
+        dara=google.com
+ARC-Authentication-Results: i=1; mx.google.com;
+       dkim=pass header.i=@gmail.com header.s=20230601 header.b=FaW2DH+5;
+       spf=pass (google.com: domain of depi.mcit2025@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=depi.mcit2025@gmail.com;
+       dmarc=pass (p=NONE sp=QUARANTINE dis=NONE) header.from=gmail.com;
+       dara=pass header.i=@gmail.com
+Return-Path: <depi.mcit2025@gmail.com>
+Received: from mail-sor-f41.google.com (mail-sor-f41.google.com. [209.85.220.41])
+        by mx.google.com with SMTPS id 5b1f17b1804b1-45e0372e4e5sor39815325e9.5.2025.09.17.03.04.34
+        for <meroomagdy165@gmail.com>
+        (Google Transport Security);
+        Wed, 17 Sep 2025 03:04:34 -0700 (PDT)
+Received-SPF: pass (google.com: domain of depi.mcit2025@gmail.com designates 209.85.220.41 as permitted sender) client-ip=209.85.220.41;
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@gmail.com header.s=20230601 header.b=FaW2DH+5;
+       spf=pass (google.com: domain of depi.mcit2025@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=depi.mcit2025@gmail.com;
+       dmarc=pass (p=NONE sp=QUARANTINE dis=NONE) header.from=gmail.com;
+       dara=pass header.i=@gmail.com
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20230601; t=1758103474; x=1758708274; dara=google.com;
+        h=mime-version:message-id:subject:reply-to:from:to:date:from:to:cc
+         :subject:date:message-id:reply-to;
+        bh=a600tbUziHUOqdEl/xQ5BhMSKQcgtUfUSV3pe2W5lx8=;
+        b=FaW2DH+5CxMExAtAzvSzUtn2HWTqd43Kf993H/2H18f6qQfOP/Z5gfCVSivfec9Gxh
+         A1UZwbRWEoDyc0KAjPKNp8n7H0m6/aucgy+C4pUr7EVz/MN1VeMR7/X5v3e1iIoFFqSs
+         Drn+cTkWSmU+/4d2SuIEqC0E2FDJ88Ygwg57zMeyNx7afCmKItj2hS0OLXDo8aTQZcYf
+         sMzGS5tif8vGRvOamWrneVDwwhkZRhEMj/Ps/w26zlLk6Q95Csf/cYX3GU/p1crKdyUw
+         c6OxEcWZ74sJn/659MSKgi4eotoG/VXOWOQEYJ3lPaRR5zSjm8KUQ8TRj4QFMxYFfXfU
+         Re7w==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=1e100.net; s=20230601; t=1758103474; x=1758708274;
+        h=mime-version:message-id:subject:reply-to:from:to:date
+         :x-gm-message-state:from:to:cc:subject:date:message-id:reply-to;
+        bh=a600tbUziHUOqdEl/xQ5BhMSKQcgtUfUSV3pe2W5lx8=;
+        b=qZ7r0VMyY3CgEW07+r1JW3CPEXkMobYK+zUHh85f4FN12ZDLIXWCgaBA8u92/VMFor
+         AShN/7z5+R5pzlf59xp3Njqwr7Nb6GtUzAd7yfn3oFz3LbaYX8k9P+JciZ/A3j5uhFxB
+         SxJmoIYPcsf2OpmPsR/0OJsLmJV4Cs9k3uknyHQMZrJrNTnCuoNct4GsxQYVS2KE1Hnv
+         hM6Hm8WpYRLOFEzQL6YWy9UOgDZlGzulkxnfZTI6DByCdIqP5de2N/A7C4zkt/lmqA6N
+         bQJREFWmgYeFjTN2SzHF53EBYk7PylZpu6dyA5zqh7SAjYtfVpTEzAM/stFMV/MTk6Lf
+         IT4w==
+X-Gm-Message-State: AOJu0Yxyx3b/sG8+cb5HSgs203Ke0obcEUTfQnth5S6YzsGdyqhk6rfH
+	dggXT1R2LCU7oyZ2POpWRDVERLmCWUg0UcnOft9O9ASZxgL8Ix6YKaci4HeZQg==
+X-Gm-Gg: ASbGncuHvv5q9yrPW4GMH7FpIPTbTeLn7+7iCPGz1aNKBu4zBnt6H3WjNf9xfsNz9Qx
+	8I43ZXq1MqY45YhhlnLZZfT/981hImcyVmdnUV1As8/RqifyxnvKLrNLyljdIfTKZyb1CHY6iOS
+	jNHlX73TMR1Ri04uPp2oAc0M40Ht/G8QlpA1Sns6NLG2mnpC+VM2stEcgMxU00OVJSPQ7mu08kk
+	cHxxvXD0PhktuqSBhM0ZeM1VV7LbaUYrkLipJRpmo8HjRZVaJnGn1sfrrRf+XGutripvYdt0oYU
+	zjlK3TGEKEDkdnmcazrqtKPXTsJNPRGmQ+XceJrKsILFpkd4Kw+6LaMlsdMFnECMOFO/es5MBhG
+	qMGe0BNQ1Krtr0Gs7u3R1Ynm3nus=
+X-Google-Smtp-Source: AGHT+IGQBA0T+03E3sA8S+MnHUBfe91X1N9guwgivroGxWYWiMZARh/xsU5PKSBunf/jgz1ixFfydQ==
+X-Received: by 2002:a05:600c:3b09:b0:456:1a69:94fd with SMTP id 5b1f17b1804b1-461fc6675efmr15629675e9.0.1758103473624;
+        Wed, 17 Sep 2025 03:04:33 -0700 (PDT)
+Return-Path: <depi.mcit2025@gmail.com>
+Received: from 48cefba99d38 ([41.33.131.170])
+        by smtp.gmail.com with ESMTPSA id 5b1f17b1804b1-45f320e2000sm38671695e9.1.2025.09.17.03.04.32
+        for <meroomagdy165@gmail.com>
+        (version=TLS1_3 cipher=TLS_AES_256_GCM_SHA384 bits=256/256);
+        Wed, 17 Sep 2025 03:04:33 -0700 (PDT)
+Date: Wed, 17 Sep 2025 13:04:32 +0300
+To: "Merola Magdy Boshra" <meroomagdy165@gmail.com>
+From: "Admin User (via DEPI)" <depi.mcit2025@gmail.com>
+Reply-To: "Do not reply to this email" <depi.mcit2025@gmail.com>
+Subject: [Moodle-Reminder] OVERDUE: (Cyber Security Incident Response Analyst-Forum) Cyber Security Incident Response Analyst - General is due
+Message-ID: <moodlereminder2357@127.0.0.1>
+X-Mailer: PHPMailer 6.9.1 (https://github.com/PHPMailer/PHPMailer)
+X-Course-Id: 1456
+X-Course-Name: Cyber Security Incident Response Analyst
+X-Activity-Id: 126722
+X-Activity-Name: Forum: Cyber Security Incident Response Analyst - General
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="b1=_nD9VB3rodVVqeZmuo2ksZMwm3txUydUc4FjyGff2w"
+
+--b1=_nD9VB3rodVVqeZmuo2ksZMwm3txUydUc4FjyGff2w
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: quoted-printable
+
+
+(Cyber Security Incident Response Analyst-Forum) Cyber Security Incident
+Response Analyst - General is due [-1 day to go]
+When: Wednesday, 17 September 2025 12:56 PM - Egypt Standard Time
+Course: Cyber Security Incident Response Analyst
+Activity: Forum: Cyber Security Incident Response Analyst - General
+Description:
+
+Discuss general topics / issues in Cyber Security Incident Response Analyst
+profile
+
+--b1=_nD9VB3rodVVqeZmuo2ksZMwm3txUydUc4FjyGff2w
+Content-Type: text/html; charset=UTF-8
+Content-Transfer-Encoding: quoted-printable
+
+<head></head><body id=3D"email"><div><table cellspacing=3D"0" cellpadding=
+=3D"8" style=3D"width:100%;font-family:Tahoma,Arial,Sans-serif;border-width=
+:1px 2px 2px 1px;border:1px solid #ccc;font-size:13px"><tr><td colspan=3D"2=
+"><a style=3D"text-decoration: none" href=3D"http://127.0.0.1:8080/calendar=
+/view.php?view=3Dday&amp;cal_d=3D17&amp;cal_m=3D9&amp;cal_y=3D2025#event_23=
+57"><h3 style=3D"padding:10px 0 10px 0;margin:0;font-family:Arial,Sans-seri=
+f;font-size:16px;font-weight:bold;color:#222">[OVERDUE]: (Cyber Security In=
+cident Response Analyst-Forum) Cyber Security Incident Response Analyst - G=
+eneral is due</h3></a></td></tr><tr><td colspan=3D"2"><h4 style=3D"padding:=
+10px 0 10px 10px;background-color: #f3e3e3;margin:0;font-family:Arial,Sans-=
+serif;font-size:16px;font-weight:bold;color:#ec4040">This activity is overd=
+ue!</h4></td></tr><tr><td style=3D"padding: 0 15px; color: #888; width: 150=
+px;">When</td><td>Wednesday, 17 September 2025 12:56 PM &nbsp;&nbsp;<span s=
+tyle=3D"font-size:13px;color: #888;">Egypt Standard Time</span></td></tr><t=
+r><td style=3D"padding: 0 15px; color: #888; width: 150px;">Course</td><td>=
+Cyber Security Incident Response Analyst</td></tr><tr><td style=3D"padding:=
+ 0 15px; color: #888; width: 150px;">Activity</td><td><a target=3D"_blank" =
+href=3D"http://127.0.0.1:8080/mod/forum/view.php?id=3D760">Forum: Cyber Sec=
+urity Incident Response Analyst - General</a></td></tr><tr><td style=3D"bor=
+der-top:1px solid #eee;font-family:Arial,Sans-serif;font-size:13px;padding:=
+ 2px 15px;" colspan=3D"2"><p><div class=3D"no-overflow"><p>Discuss general =
+topics / issues in Cyber Security Incident Response Analyst profile</p></di=
+v></p></td></tr><tr><td style=3D"background-color:#f6f6f6;color:#888;border=
+-top:1px solid #ccc;font-family:Arial,Sans-serif;font-size:11px;padding: 20=
+px 10px;" colspan=3D"2">Reminder from <a target=3D"_blank" href=3D"http://1=
+27.0.0.1:8080/calendar/index.php">Moodle Calendar</a></td></tr></table></di=
+v></body></html>
+
+--b1=_nD9VB3rodVVqeZmuo2ksZMwm3txUydUc4FjyGff2w--
+

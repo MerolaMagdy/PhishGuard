@@ -1,0 +1,20 @@
+{
+    "subject": "Test Email for Parser",
+    "from": "Security Team <support@example.com>",
+    "return_path": "fake@anotherdomain.com",
+    "header_findings": [
+        "Spoofed sender? From: Security Team <support@example.com> vs Return-Path: fake@anotherdomain.com"
+    ],
+    "keyword_findings": [
+        "verify",
+        "login"
+    ],
+    "link_findings": [
+        {
+            "link": "http://192.168.1.50/login",
+            "reason": "Uses IP instead of domain"
+        }
+    ],
+    "risk_score": 90,
+    "overall_risk": "High"
+}
