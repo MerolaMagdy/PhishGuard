@@ -93,6 +93,8 @@ if uploaded_file:
                 st.write(f"- {lf.get('link')} — {lf.get('reason')}")
 
         if os.path.exists(pdf_path):
-    with open(pdf_path, "rb") as f:
-        st.download_button("Download PDF Report", f, file_name=os.path.basename(pdf_path))
+            with open(pdf_path, "rb") as f:
+                st.download_button("Download PDF Report", f, file_name=os.path.basename(pdf_path))
+            
+        
 
