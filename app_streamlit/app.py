@@ -3,6 +3,9 @@ import os
 import plotly.graph_objects as go
 import os
 from analysis import run_analysis
+import analysis as analysis_module
+# خدي مفتاح VT من متغير البيئة لو مُعرّف
+analysis_module.VT_API_KEY = os.getenv("VT_API_KEY", None)
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 
