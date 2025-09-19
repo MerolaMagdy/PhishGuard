@@ -3,7 +3,6 @@ import os
 import plotly.graph_objects as go
 from analysis import run_analysis
 import analysis as analysis_module
-# مفتاح VirusTotal من متغير البيئة لو مُعرّف
 analysis_module.VT_API_KEY = os.getenv("VT_API_KEY", None)
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
@@ -28,11 +27,13 @@ def save_report_pdf(report, pdf_path):
     )
     story.append(Spacer(1, 12))
 
+    # Header findings
     story.append(Paragraph("Header Findings:", styles['Heading2']))
     for h in report.get("header_findings") or []:
         story.append(Paragraph(str(h), styles['Normal']))
     story.append(Spacer(1, 12))
 
+    # Keyword findings
     story.append(Paragraph("Keyword Findings:", styles['Heading2']))
     raw_keywords = report.get("keyword_findings") or []
     if not isinstance(raw_keywords, list):
@@ -41,15 +42,15 @@ def save_report_pdf(report, pdf_path):
     story.append(Paragraph(", ".join(keywords) if keywords else "None", styles['Normal']))
     story.append(Spacer(1, 12))
 
+    # Link findings  ✅  <-- التصحيح هنا
     story.append(Paragraph("Link Findings:", styles['Heading2']))
     for lf in report.get("link_findings") or []:
         link = str(lf.get('link', ''))
-        reason = str(lf.get('reason', ''))
-        story.append(Paragraph(f"{link} — {reason}", styles['Normal']))
-    
-    print("DEBUG report:", report)
-    doc.build(story)
+        reasons = lf.get('reasons', [])
+        reasons_text = ", ".join(reasons) if reasons else "No specific reason"
+        story.append(Paragraph(f"{link} — {reasons_text}", styles['Normal']))
 
+    doc.build(story)
 
 
 st.set_page_config(page_title="PhishGuard", layout="wide", page_icon="🛡️")
@@ -77,14 +78,12 @@ if uploaded_file:
     with st.spinner("Analyzing email..."):
         os.makedirs("uploads", exist_ok=True)
         temp_path = os.path.join("uploads", uploaded_file.name)
-        # احفظ الملف موقتًا
+
         with open(temp_path, "wb") as f:
             f.write(uploaded_file.read())
 
-        # شغّل التحليل مباشرة
         report = run_analysis(temp_path)
 
-        # أنشئ ملف الـ PDF
         pdf_path = temp_path + ".pdf"
         save_report_pdf(report, pdf_path)
 
@@ -112,10 +111,12 @@ if uploaded_file:
             safe_keywords = [str(k) for k in raw_keywords if k is not None]
             st.write(", ".join(safe_keywords) if safe_keywords else "None")
 
-
+            # Link findings  ✅  <-- والتصحيح هنا
             st.subheader("Link Findings")
             for lf in report.get("link_findings") or []:
-                st.write(f"- {lf.get('link')} — {lf.get('reason')}")
+                reasons = lf.get("reasons", [])
+                reasons_text = ", ".join(reasons) if reasons else "No specific reason"
+                st.write(f"- {lf.get('link')} — {reasons_text}")
 
         if os.path.exists(pdf_path):
             with open(pdf_path, "rb") as f:
