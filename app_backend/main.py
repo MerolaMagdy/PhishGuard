@@ -1,5 +1,7 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse, FileResponse
+import analysis as analysis_module
+analysis_module.VT_API_KEY = os.getenv("VT_API_KEY", None)
 import os
 from analysis import run_analysis
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
