@@ -28,26 +28,28 @@ def save_report_pdf(report, pdf_path):
     )
     story.append(Spacer(1, 12))
 
-    # Header Findings
     story.append(Paragraph("Header Findings:", styles['Heading2']))
     for h in report.get("header_findings") or []:
         story.append(Paragraph(str(h), styles['Normal']))
     story.append(Spacer(1, 12))
 
-    # Keyword Findings
     story.append(Paragraph("Keyword Findings:", styles['Heading2']))
-    keywords = report.get("keyword_findings") or []
-    if not isinstance(keywords, list):
-        keywords = [str(keywords)]
+    raw_keywords = report.get("keyword_findings") or []
+    if not isinstance(raw_keywords, list):
+        raw_keywords = [raw_keywords]
+    keywords = [str(k) for k in raw_keywords if k is not None]
     story.append(Paragraph(", ".join(keywords) if keywords else "None", styles['Normal']))
     story.append(Spacer(1, 12))
 
-    # Link Findings
     story.append(Paragraph("Link Findings:", styles['Heading2']))
     for lf in report.get("link_findings") or []:
-        story.append(Paragraph(f"{lf['link']} — {lf['reason']}", styles['Normal']))
-
+        link = str(lf.get('link', ''))
+        reason = str(lf.get('reason', ''))
+        story.append(Paragraph(f"{link} — {reason}", styles['Normal']))
+    
+    print("DEBUG report:", report)
     doc.build(story)
+
 
 
 st.set_page_config(page_title="PhishGuard", layout="wide", page_icon="🛡️")
