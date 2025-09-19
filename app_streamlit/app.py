@@ -1,47 +1,53 @@
 import streamlit as st
 import os
 import plotly.graph_objects as go
-import os
 from analysis import run_analysis
 import analysis as analysis_module
-# خدي مفتاح VT من متغير البيئة لو مُعرّف
+# مفتاح VirusTotal من متغير البيئة لو مُعرّف
 analysis_module.VT_API_KEY = os.getenv("VT_API_KEY", None)
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
+
 
 def save_report_pdf(report, pdf_path):
     styles = getSampleStyleSheet()
     doc = SimpleDocTemplate(pdf_path)
     story = []
 
-    story.append(Paragraph(f"Subject: {report['subject']}", styles['Title']))
-    story.append(Spacer(1,12))
-    story.append(Paragraph(f"From: {report['from']}", styles['Normal']))
-    story.append(Paragraph(f"Return-Path: {report['return_path']}", styles['Normal']))
-    story.append(Spacer(1,12))
-    story.append(Paragraph(f"Overall Risk: {report['overall_risk']} (Score: {report['risk_score']})", styles['Normal']))
-    story.append(Spacer(1,12))
+    story.append(Paragraph(f"Subject: {report.get('subject', '')}", styles['Title']))
+    story.append(Spacer(1, 12))
+    story.append(Paragraph(f"From: {report.get('from', '')}", styles['Normal']))
+    story.append(Paragraph(f"Return-Path: {report.get('return_path', '')}", styles['Normal']))
+    story.append(Spacer(1, 12))
+    story.append(
+        Paragraph(
+            f"Overall Risk: {report.get('overall_risk', 'N/A')} "
+            f"(Score: {report.get('risk_score', 0)})",
+            styles['Normal']
+        )
+    )
+    story.append(Spacer(1, 12))
 
+    # Header Findings
     story.append(Paragraph("Header Findings:", styles['Heading2']))
     for h in report.get("header_findings") or []:
         story.append(Paragraph(str(h), styles['Normal']))
-    story.append(Spacer(1,12))
+    story.append(Spacer(1, 12))
 
+    # Keyword Findings
     story.append(Paragraph("Keyword Findings:", styles['Heading2']))
     keywords = report.get("keyword_findings") or []
-if not isinstance(keywords, list):
-    keywords = [str(keywords)]
-story.append(Paragraph(", ".join(keywords) if keywords else "None", styles['Normal']))
+    if not isinstance(keywords, list):
+        keywords = [str(keywords)]
+    story.append(Paragraph(", ".join(keywords) if keywords else "None", styles['Normal']))
+    story.append(Spacer(1, 12))
 
-    story.append(Spacer(1,12))
-
+    # Link Findings
     story.append(Paragraph("Link Findings:", styles['Heading2']))
     for lf in report.get("link_findings") or []:
         story.append(Paragraph(f"{lf['link']} — {lf['reason']}", styles['Normal']))
 
     doc.build(story)
-
-
 
 
 st.set_page_config(page_title="PhishGuard", layout="wide", page_icon="🛡️")
@@ -50,16 +56,20 @@ st.markdown("رفع ملف `.eml` لتحليل البريد واستخراج ت�
 
 uploaded_file = st.file_uploader("Upload a .eml file", type=["eml"])
 
+
 def show_gauge(score):
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
         value=score,
-        gauge={'axis': {'range': [0,100]},
-               'bar': {'color': "darkred" if score>=70 else "orange" if score>=40 else "green"}},
+        gauge={
+            'axis': {'range': [0, 100]},
+            'bar': {'color': "darkred" if score >= 70 else "orange" if score >= 40 else "green"}
+        },
         title={'text': "Risk Score"}
     ))
-    fig.update_layout(height=280, margin=dict(l=20,r=20,t=30,b=10))
+    fig.update_layout(height=280, margin=dict(l=20, r=20, t=30, b=10))
     st.plotly_chart(fig, use_container_width=True)
+
 
 if uploaded_file:
     with st.spinner("Analyzing email..."):
@@ -76,9 +86,10 @@ if uploaded_file:
         pdf_path = temp_path + ".pdf"
         save_report_pdf(report, pdf_path)
 
-
-        st.success(f"Analysis complete — Risk: {report['overall_risk']} (Score: {report['risk_score']})")
-        col1, col2 = st.columns([1,2])
+        st.success(
+            f"Analysis complete — Risk: {report['overall_risk']} (Score: {report['risk_score']})"
+        )
+        col1, col2 = st.columns([1, 2])
 
         with col1:
             show_gauge(report['risk_score'])
@@ -102,6 +113,3 @@ if uploaded_file:
         if os.path.exists(pdf_path):
             with open(pdf_path, "rb") as f:
                 st.download_button("Download PDF Report", f, file_name=os.path.basename(pdf_path))
-            
-        
-
