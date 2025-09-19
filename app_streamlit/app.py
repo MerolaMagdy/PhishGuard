@@ -23,16 +23,20 @@ def save_report_pdf(report, pdf_path):
     story.append(Spacer(1,12))
 
     story.append(Paragraph("Header Findings:", styles['Heading2']))
-    for h in report['header_findings']:
+    for h in report.get("header_findings") or []:
         story.append(Paragraph(str(h), styles['Normal']))
     story.append(Spacer(1,12))
 
     story.append(Paragraph("Keyword Findings:", styles['Heading2']))
-    story.append(Paragraph(", ".join(report['keyword_findings'] or ["None"]), styles['Normal']))
+    keywords = report.get("keyword_findings") or []
+if not isinstance(keywords, list):
+    keywords = [str(keywords)]
+story.append(Paragraph(", ".join(keywords) if keywords else "None", styles['Normal']))
+
     story.append(Spacer(1,12))
 
     story.append(Paragraph("Link Findings:", styles['Heading2']))
-    for lf in report['link_findings']:
+    for lf in report.get("link_findings") or []:
         story.append(Paragraph(f"{lf['link']} — {lf['reason']}", styles['Normal']))
 
     doc.build(story)
