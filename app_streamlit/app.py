@@ -106,7 +106,12 @@ if uploaded_file:
                 st.write("- " + str(h))
 
             st.subheader("Keywords")
-            st.write(", ".join(report.get("keyword_findings") or ["None"]))
+            raw_keywords = report.get("keyword_findings") or []
+            if not isinstance(raw_keywords, list):
+                raw_keywords = [raw_keywords]
+            safe_keywords = [str(k) for k in raw_keywords if k is not None]
+            st.write(", ".join(safe_keywords) if safe_keywords else "None")
+
 
             st.subheader("Link Findings")
             for lf in report.get("link_findings") or []:
