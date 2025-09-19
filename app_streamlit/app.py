@@ -4,8 +4,10 @@ import plotly.graph_objects as go
 from analysis import run_analysis
 import analysis as analysis_module
 analysis_module.VT_API_KEY = os.getenv("VT_API_KEY", None)
+
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
+from xml.sax.saxutils import escape   # ✅ مهم للهروب
 
 
 def save_report_pdf(report, pdf_path):
@@ -13,14 +15,15 @@ def save_report_pdf(report, pdf_path):
     doc = SimpleDocTemplate(pdf_path)
     story = []
 
-    story.append(Paragraph(f"Subject: {report.get('subject', '')}", styles['Title']))
+    # استخدم escape في كل النصوص
+    story.append(Paragraph(f"Subject: {escape(str(report.get('subject', '')))}", styles['Title']))
     story.append(Spacer(1, 12))
-    story.append(Paragraph(f"From: {report.get('from', '')}", styles['Normal']))
-    story.append(Paragraph(f"Return-Path: {report.get('return_path', '')}", styles['Normal']))
+    story.append(Paragraph(f"From: {escape(str(report.get('from', '')))}", styles['Normal']))
+    story.append(Paragraph(f"Return-Path: {escape(str(report.get('return_path', '')))}", styles['Normal']))
     story.append(Spacer(1, 12))
     story.append(
         Paragraph(
-            f"Overall Risk: {report.get('overall_risk', 'N/A')} "
+            f"Overall Risk: {escape(str(report.get('overall_risk', 'N/A')))} "
             f"(Score: {report.get('risk_score', 0)})",
             styles['Normal']
         )
@@ -30,7 +33,7 @@ def save_report_pdf(report, pdf_path):
     # Header findings
     story.append(Paragraph("Header Findings:", styles['Heading2']))
     for h in report.get("header_findings") or []:
-        story.append(Paragraph(str(h), styles['Normal']))
+        story.append(Paragraph(escape(str(h)), styles['Normal']))
     story.append(Spacer(1, 12))
 
     # Keyword findings
@@ -38,15 +41,15 @@ def save_report_pdf(report, pdf_path):
     raw_keywords = report.get("keyword_findings") or []
     if not isinstance(raw_keywords, list):
         raw_keywords = [raw_keywords]
-    keywords = [str(k) for k in raw_keywords if k is not None]
+    keywords = [escape(str(k)) for k in raw_keywords if k is not None]
     story.append(Paragraph(", ".join(keywords) if keywords else "None", styles['Normal']))
     story.append(Spacer(1, 12))
 
-    # Link findings  ✅  <-- التصحيح هنا
+    # Link findings
     story.append(Paragraph("Link Findings:", styles['Heading2']))
     for lf in report.get("link_findings") or []:
-        link = str(lf.get('link', ''))
-        reasons = lf.get('reasons', [])
+        link = escape(str(lf.get('link', '')))
+        reasons = [escape(str(r)) for r in lf.get('reasons', [])]
         reasons_text = ", ".join(reasons) if reasons else "No specific reason"
         story.append(Paragraph(f"{link} — {reasons_text}", styles['Normal']))
 
@@ -111,7 +114,6 @@ if uploaded_file:
             safe_keywords = [str(k) for k in raw_keywords if k is not None]
             st.write(", ".join(safe_keywords) if safe_keywords else "None")
 
-            # Link findings  ✅  <-- والتصحيح هنا
             st.subheader("Link Findings")
             for lf in report.get("link_findings") or []:
                 reasons = lf.get("reasons", [])
