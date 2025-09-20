@@ -1,65 +1,79 @@
-# ===== Imports =====
 import streamlit as st
-import email
-from urllib.parse import urlparse
-import tldextract
-import re
-import pandas as pd
+import os
+import tempfile
+from analysis import run_analysis, save_report_pdf as analysis_save_pdf  # import your analysis functions
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
 import plotly.graph_objects as go
-from analysis import analyze_links  # تأكدي دالتك جاهزة
 
-# ===== Streamlit page config MUST be at the top =====
-st.set_page_config(page_title="PhishGuard", layout="wide")
+# ===== Streamlit page setup =====
+st.set_page_config(page_title="PhishGuard", layout="wide", page_icon="🛡️")
+st.markdown("<h1 style='color:#00e5ff'>PhishGuard — Phishing Email Analyzer</h1>", unsafe_allow_html=True)
+st.markdown("رفع ملف .eml لتحليل البريد أو إدخال مسار الملف الكامل.")
 
-# ===== Title =====
-st.title("PhishGuard – Email Phishing Detection")
+# ===== Helper: Gauge =====
+def show_gauge(score):
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=score,
+        gauge={
+            'axis': {'range': [0, 100]},
+            'bar': {'color': "darkred" if score >= 70 else "orange" if score >= 40 else "green"}
+        },
+        title={'text': "Risk Score"}
+    ))
+    fig.update_layout(height=280, margin=dict(l=20, r=20, t=30, b=10))
+    st.plotly_chart(fig, use_container_width=True)
 
-# ===== File uploader =====
-uploaded_file = st.file_uploader("Upload a .eml file", type="eml")
+# ===== File input =====
+uploaded_file = st.file_uploader("Upload a .eml file", type=["eml"])
+local_path_input = st.text_input("Or enter full path to .eml file", "")
 
-if uploaded_file is not None:
-    try:
-        # قراءة محتوى الملف
-        content = uploaded_file.read()
-        msg = email.message_from_bytes(content)
-        
-        # جمع كل الروابط في البريد
-        links = []
-        if msg.is_multipart():
-            for part in msg.walk():
-                if part.get_content_type() == "text/plain":
-                    body = part.get_payload(decode=True).decode(errors="ignore")
-                    links += re.findall(r'https?://\S+', body)
-        else:
-            body = msg.get_payload(decode=True).decode(errors="ignore")
-            links += re.findall(r'https?://\S+', body)
+# ===== Analysis =====
+eml_path = None
+if uploaded_file:
+    # Save uploaded file temporarily
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".eml") as tmp:
+        tmp.write(uploaded_file.read())
+        eml_path = tmp.name
+elif local_path_input and os.path.isfile(local_path_input):
+    eml_path = os.path.abspath(local_path_input)
 
-        # ===== تحليل الروابط =====
-        results = analyze_links(links)
+if eml_path:
+    with st.spinner("Analyzing email..."):
+        report = run_analysis(eml_path)
 
-        # ===== تحضير DataFrame للعرض =====
-        df_data = []
-        for r in results:
-            df_data.append({
-                "Link": r.get("link"),
-                "Reasons": ", ".join(r.get("reasons", [])) if r.get("reasons") else "Safe"
-            })
-        df = pd.DataFrame(df_data)
+        # Save PDF report
+        pdf_path = eml_path + ".pdf"
+        analysis_save_pdf(report, pdf_path)
 
-        # ===== عرض النتائج =====
-        st.subheader("Analysis Results")
-        st.dataframe(df, use_container_width=True)
+        # Display results
+        st.success(f"Analysis complete — Risk: {report['overall_risk']} (Score: {report['risk_score']})")
 
-        # ===== Plotly Indicator =====
-        suspicious_count = sum(1 for r in results if r.get("reasons"))
-        total_links = len(results)
-        fig = go.Figure(go.Indicator(
-            mode="gauge+number",
-            value=suspicious_count,
-            number={'suffix': f'/{total_links} suspicious'},
-            title={'text': "Suspicious Links Count"}
-        ))
-        st.plotly_chart(fig)
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            show_gauge(report['risk_score'])
+            st.write("**Subject**")
+            st.write(report.get("subject", "N/A"))
+            st.write("**From**")
+            st.write(report.get("from", "N/A"))
+        with col2:
+            st.subheader("Header Findings")
+            for h in report.get("header_findings", []):
+                st.write("- " + str(h))
+            st.subheader("Keywords")
+            raw_keywords = report.get("keyword_findings", [])
+            safe_keywords = [str(k) for k in raw_keywords if k is not None]
+            st.write(", ".join(safe_keywords) if safe_keywords else "None")
+            st.subheader("Link Findings")
+            for lf in report.get("link_findings", []):
+                reasons = lf.get("reasons", [])
+                reasons_text = ", ".join(reasons) if reasons else "No specific reason"
+                st.write(f"- {lf.get('link')} — {reasons_text}")
 
-    except Exception as e:
-        st.error(f"Error processing the file: {e}")
+        # PDF download
+        if os.path.exists(pdf_path):
+            with open(pdf_path, "rb") as f:
+                st.download_button("Download PDF Report", f, file_name=os.path.basename(pdf_path))
+else:
+    st.info("Please upload a .eml file or enter a valid file path.")
