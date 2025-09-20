@@ -227,6 +227,21 @@ def run_analysis_bytes(file_bytes):
     subject, from_addr, return_path, body_text = parse_eml_bytes(file_bytes)
     return _make_report(subject, from_addr, return_path, body_text)
 
+def run_analysis_bytes(file_bytes):
+    from email import policy
+    from email.parser import BytesParser
+    import io
+
+    msg = BytesParser(policy=policy.default).parsebytes(file_bytes)
+    # ثم نفس منطق run_analysis لكن على msg مباشرة
+    # أو ببساطة احفظي الـbytes في ملف مؤقت واستعملي run_analysis
+    import tempfile
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".eml") as tmp:
+        tmp.write(file_bytes)
+        tmp_path = tmp.name
+    return run_analysis(tmp_path)
+
+
 def _make_report(subject, from_addr, return_path, body_text):
     links = extract_links(body_text)
     link_findings = analyze_links(links)
