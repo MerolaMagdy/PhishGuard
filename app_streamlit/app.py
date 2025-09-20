@@ -1,13 +1,13 @@
-import streamlit as st
 import os
+import streamlit as st
 import plotly.graph_objects as go
-from analysis import run_analysis
-import analysis as analysis_module
-analysis_module.VT_API_KEY = os.getenv("VT_API_KEY", None)
+from html import escape
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
-from html import escape
-import tempfile
+import analysis as analysis_module
+
+# لو عندك مفتاح VirusTotal
+analysis_module.VT_API_KEY = os.getenv("VT_API_KEY", None)
 
 # ===== حفظ التقرير كـ PDF =====
 def save_report_pdf(report, pdf_path):
@@ -15,10 +15,10 @@ def save_report_pdf(report, pdf_path):
     doc = SimpleDocTemplate(pdf_path)
     story = []
 
-    story.append(Paragraph(f"Subject: {report.get('subject', '')}", styles['Title']))
+    story.append(Paragraph(f"Subject: {escape(str(report.get('subject', '')))}", styles['Title']))
     story.append(Spacer(1, 12))
-    story.append(Paragraph(f"From: {report.get('from', '')}", styles['Normal']))
-    story.append(Paragraph(f"Return-Path: {report.get('return_path', '')}", styles['Normal']))
+    story.append(Paragraph(f"From: {escape(str(report.get('from', '')))}", styles['Normal']))
+    story.append(Paragraph(f"Return-Path: {escape(str(report.get('return_path', '')))}", styles['Normal']))
     story.append(Spacer(1, 12))
     story.append(
         Paragraph(
@@ -29,28 +29,22 @@ def save_report_pdf(report, pdf_path):
     )
     story.append(Spacer(1, 12))
 
-    # Header findings
     story.append(Paragraph("Header Findings:", styles['Heading2']))
     for h in report.get("header_findings") or []:
-        story.append(Paragraph(str(h), styles['Normal']))
+        story.append(Paragraph(escape(str(h)), styles['Normal']))
     story.append(Spacer(1, 12))
 
-    # Keyword findings
     story.append(Paragraph("Keyword Findings:", styles['Heading2']))
-    raw_keywords = report.get("keyword_findings") or []
-    if not isinstance(raw_keywords, list):
-        raw_keywords = [raw_keywords]
-    keywords = [str(k) for k in raw_keywords if k is not None]
+    keywords = [str(k) for k in (report.get("keyword_findings") or [])]
     story.append(Paragraph(", ".join(keywords) if keywords else "None", styles['Normal']))
     story.append(Spacer(1, 12))
 
-    # Link findings
     story.append(Paragraph("Link Findings:", styles['Heading2']))
     for lf in report.get("link_findings") or []:
         link = str(lf.get('link', ''))
         reasons = lf.get('reasons', [])
         reasons_text = ", ".join(reasons) if reasons else "No specific reason"
-        story.append(Paragraph(f"{link} — {reasons_text}", styles['Normal']))
+        story.append(Paragraph(f"{escape(link)} — {escape(reasons_text)}", styles['Normal']))
 
     doc.build(story)
 
@@ -58,9 +52,9 @@ def save_report_pdf(report, pdf_path):
 # ===== Streamlit UI =====
 st.set_page_config(page_title="PhishGuard", layout="wide", page_icon="🛡️")
 st.markdown("<h1 style='color:#00e5ff'>PhishGuard — Phishing Email Analyzer</h1>", unsafe_allow_html=True)
-st.markdown("رفع ملف `.eml` لتحليل البريد واستخراج تقرير PDF.")
+st.markdown("ارفع ملف `.eml` لتحليل البريد واستخراج تقرير PDF.")
 
-uploaded_file = st.file_uploader("Upload a .eml file", type=["eml"])
+uploaded_file = st.file_uploader("اختر ملف .eml من جهازك", type=["eml"])
 
 # ===== Gauge =====
 def show_gauge(score):
@@ -79,16 +73,15 @@ def show_gauge(score):
 
 if uploaded_file:
     with st.spinner("Analyzing email..."):
-        # حفظ الملف مؤقتاً على السيرفر
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".eml") as tmp:
-            tmp.write(uploaded_file.read())
-            temp_path = tmp.name
+        # نقرأ المحتوى مباشرة من الذاكرة
+        from analysis import run_analysis_bytes  # لازم تكوني ضيفتيها في analysis.py
+        report = run_analysis_bytes(uploaded_file.read())
 
-        # تشغيل التحليل
-        report = run_analysis(temp_path)
-
-        pdf_path = temp_path + ".pdf"
-        save_report_pdf(report, pdf_path)
+        # إنشاء تقرير PDF في ذاكرة مؤقتة
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
+            save_report_pdf(report, tmp_pdf.name)
+            pdf_path = tmp_pdf.name
 
         st.success(
             f"Analysis complete — Risk: {report['overall_risk']} (Score: {report['risk_score']})"
@@ -108,11 +101,8 @@ if uploaded_file:
                 st.write("- " + str(h))
 
             st.subheader("Keywords")
-            raw_keywords = report.get("keyword_findings") or []
-            if not isinstance(raw_keywords, list):
-                raw_keywords = [raw_keywords]
-            safe_keywords = [str(k) for k in raw_keywords if k is not None]
-            st.write(", ".join(safe_keywords) if safe_keywords else "None")
+            keywords = [str(k) for k in (report.get("keyword_findings") or [])]
+            st.write(", ".join(keywords) if keywords else "None")
 
             st.subheader("Link Findings")
             for lf in report.get("link_findings") or []:
@@ -120,6 +110,6 @@ if uploaded_file:
                 reasons_text = ", ".join(reasons) if reasons else "No specific reason"
                 st.write(f"- {lf.get('link')} — {reasons_text}")
 
-        if os.path.exists(pdf_path):
-            with open(pdf_path, "rb") as f:
-                st.download_button("Download PDF Report", f, file_name=os.path.basename(pdf_path))
+        # زر لتحميل التقرير PDF
+        with open(pdf_path, "rb") as f:
+            st.download_button("Download PDF Report", f, file_name="phishguard_report.pdf")
