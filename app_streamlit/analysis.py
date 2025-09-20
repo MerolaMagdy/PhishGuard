@@ -1,8 +1,9 @@
-# analysis.py (improved + high risk weighting)
+# analysis.py (improved — supports file paths, directories and wildcards)
 import os
 import re
 import json
 import time
+import glob
 import sqlite3
 import tldextract
 import requests
@@ -55,22 +56,47 @@ def cache_set(key, value):
 
 # ===== قراءة الإيميل =====
 def parse_eml(file_path):
+    # دعم ~ و relative -> absolute
+    file_path = os.path.abspath(os.path.expanduser(file_path))
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"EML file not found: {file_path}")
+
     with open(file_path, "rb") as f:
         msg = BytesParser(policy=policy.default).parse(f)
-    subject = msg["subject"]
-    from_addr = msg["from"]
-    return_path = msg["return-path"]
+
+    subject = msg.get("subject")
+    from_addr = msg.get("from")
+    return_path = msg.get("return-path")
 
     body_text = ""
     if msg.is_multipart():
         for part in msg.walk():
             ctype = part.get_content_type()
+            try:
+                content = part.get_content() or ""
+            except Exception:
+                content = part.get_payload(decode=True) or b""
+                if isinstance(content, bytes):
+                    try:
+                        content = content.decode(errors="ignore")
+                    except Exception:
+                        content = str(content)
             if ctype == "text/plain":
-                body_text += part.get_content() or ""
+                body_text += content
             elif ctype == "text/html":
-                body_text += unescape(re.sub('<[^<]+?>', ' ', part.get_content() or ""))
+                # ازالة html tags بشكل بسيط
+                body_text += unescape(re.sub('<[^<]+?>', ' ', content))
     else:
-        body_text = msg.get_content() or ""
+        try:
+            body_text = msg.get_content() or ""
+        except Exception:
+            body_text = msg.get_payload(decode=True) or ""
+            if isinstance(body_text, bytes):
+                try:
+                    body_text = body_text.decode(errors="ignore")
+                except Exception:
+                    body_text = str(body_text)
+
     return subject, from_addr, return_path, body_text
 
 # ===== استخراج الروابط =====
@@ -92,7 +118,7 @@ def extract_links(text):
 def is_ip_domain(netloc):
     return re.match(r"^\d{1,3}(\.\d{1,3}){3}$", netloc) is not None
 
-# ===== VirusTotal URL check =====
+# ===== VirusTotal URL check (optional) =====
 def vt_check_url(url):
     if not VT_API_KEY:
         return None
@@ -166,17 +192,16 @@ def analyze_links(links):
                     entry["vt_error"] = vt_res.get("error")
             suspicious.append(entry)
         except Exception as e:
-            suspicious.append({"link": link, "reason": "analysis_exception", "msg": str(e)})
+            suspicious.append({"link": link, "reasons": ["analysis_exception"], "msg": str(e)})
     return suspicious
 
 # ===== تحليل الهيدر =====
 def analyze_headers(from_addr, return_path):
     findings = []
-    if from_addr and return_path:
-        from_str = ", ".join(from_addr) if isinstance(from_addr, (list, tuple)) else str(from_addr)
-        rp = ", ".join(return_path) if isinstance(return_path, (list, tuple)) else str(return_path)
-        if rp and from_str and rp.lower() not in from_str.lower():
-            findings.append(f"Spoofed sender? From: {from_str} vs Return-Path: {rp}")
+    from_str = str(from_addr) if from_addr is not None else ""
+    rp = str(return_path) if return_path is not None else ""
+    if rp and from_str and rp.lower() not in from_str.lower():
+        findings.append(f"Spoofed sender? From: {from_str} vs Return-Path: {rp}")
     return findings
 
 # ===== تحليل الكلمات المفتاحية =====
@@ -196,9 +221,29 @@ def analyze_keywords(body_text):
             findings.append({"keyword": word, "snippet": snippet.strip()})
     return findings
 
-# ===== تشغيل التحليل + High Risk weighting =====
-def run_analysis(file_path):
-    file_path = os.path.abspath(file_path)
+# ===== تحليل مسار/مجلد كامل من ملفات eml =====
+def analyze_path(path):
+    path = os.path.expanduser(path)
+    # wildcard
+    if any(ch in path for ch in ["*", "?"]):
+        candidates = glob.glob(path, recursive=True)
+    elif os.path.isdir(path):
+        candidates = []
+        for root, _, files in os.walk(path):
+            for f in files:
+                if f.lower().endswith(".eml"):
+                    candidates.append(os.path.join(root, f))
+    else:
+        candidates = [path]
+
+    reports = []
+    for p in candidates:
+        if os.path.isfile(p) and p.lower().endswith(".eml"):
+            reports.append(run_analysis_single(p))
+    return reports
+
+# ===== تحليل ملف واحد (جوّه run_analysis نستدعيه) =====
+def run_analysis_single(file_path):
     subject, from_addr, return_path, body_text = parse_eml(file_path)
     links = extract_links(body_text)
     link_findings = analyze_links(links)
@@ -230,6 +275,7 @@ def run_analysis(file_path):
         overall_risk = "Medium"
 
     return {
+        "file": os.path.abspath(file_path),
         "subject": subject,
         "from": from_addr,
         "return_path": return_path,
@@ -240,10 +286,33 @@ def run_analysis(file_path):
         "overall_risk": overall_risk,
     }
 
+# ===== الواجهة العامة: run_analysis (يحافظ على التوافق) =====
+def run_analysis(path_or_file):
+    # لو المدخل ملف واحد أو مجلد -> نرجع dict أو list حسب الحالة
+    path_or_file = os.path.expanduser(path_or_file)
+    if os.path.isdir(path_or_file) or ("*" in path_or_file) or path_or_file.lower().endswith(".eml"):
+        reports = analyze_path(path_or_file)
+        if len(reports) == 1:
+            return reports[0]
+        return reports
+    else:
+        # افتراض أنه ملف .eml واحد لكن لم ينتهي ب .eml — نجرب فتحه
+        return run_analysis_single(path_or_file)
+
+# CLI usage
 if __name__ == "__main__":
     import sys
-    fp = sys.argv[1] if len(sys.argv) > 1 else "sample.eml"
-    r = run_analysis(fp)
-    with open("report.json", "w", encoding="utf-8") as f:
-        json.dump(r, f, indent=4, ensure_ascii=False)
-    print(json.dumps(r, indent=4, ensure_ascii=False))
+    target = sys.argv[1] if len(sys.argv) > 1 else "sample.eml"
+    res = run_analysis(target)
+    # احفظ تقرير واحد أو متعدد
+    if isinstance(res, list):
+        for i, r in enumerate(res, 1):
+            out = f"report_{i}.json"
+            with open(out, "w", encoding="utf-8") as f:
+                json.dump(r, f, indent=4, ensure_ascii=False)
+            print(f"[+] Saved {out}")
+    else:
+        with open("report.json", "w", encoding="utf-8") as f:
+            json.dump(res, f, indent=4, ensure_ascii=False)
+        print("[+] Saved report.json")
+        print(json.dumps(res, indent=4, ensure_ascii=False))
