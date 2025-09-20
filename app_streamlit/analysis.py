@@ -222,10 +222,6 @@ def run_analysis(file_path):
     subject, from_addr, return_path, body_text = parse_eml(file_path)
     return _make_report(subject, from_addr, return_path, body_text)
 
-# ===== NEW: تشغيل التحليل كامل (من bytes) =====
-def run_analysis_bytes(file_bytes):
-    subject, from_addr, return_path, body_text = parse_eml_bytes(file_bytes)
-    return _make_report(subject, from_addr, return_path, body_text)
 
 def run_analysis_bytes(file_bytes):
     from email import policy
@@ -291,4 +287,5 @@ if __name__ == "__main__":
     with open("report.json", "w", encoding="utf-8") as f:
         json.dump(r, f, indent=4, ensure_ascii=False)
     print(json.dumps(r, indent=4, ensure_ascii=False))
+
 
