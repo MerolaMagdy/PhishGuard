@@ -1,14 +1,17 @@
+# ===== Imports =====
 import streamlit as st
 import email
 from urllib.parse import urlparse
 import tldextract
 import re
+import pandas as pd
 import plotly.graph_objects as go
-from analysis import analyze_links  # تأكدي إن دالتك هنا جاهزة
+from analysis import analyze_links  # تأكدي دالتك جاهزة
 
 # ===== Streamlit page config MUST be at the top =====
 st.set_page_config(page_title="PhishGuard", layout="wide")
 
+# ===== Title =====
 st.title("PhishGuard – Email Phishing Detection")
 
 # ===== File uploader =====
@@ -20,7 +23,7 @@ if uploaded_file is not None:
         content = uploaded_file.read()
         msg = email.message_from_bytes(content)
         
-        # جمع كل الروابط في البريد (مثال بسيط: نص الجسم فقط)
+        # جمع كل الروابط في البريد
         links = []
         if msg.is_multipart():
             for part in msg.walk():
@@ -31,20 +34,23 @@ if uploaded_file is not None:
             body = msg.get_payload(decode=True).decode(errors="ignore")
             links += re.findall(r'https?://\S+', body)
 
-        # تحليل الروابط
+        # ===== تحليل الروابط =====
         results = analyze_links(links)
+
+        # ===== تحضير DataFrame للعرض =====
+        df_data = []
+        for r in results:
+            df_data.append({
+                "Link": r.get("link"),
+                "Reasons": ", ".join(r.get("reasons", [])) if r.get("reasons") else "Safe"
+            })
+        df = pd.DataFrame(df_data)
 
         # ===== عرض النتائج =====
         st.subheader("Analysis Results")
-        for res in results:
-            st.markdown(f"**Link:** {res.get('link')}")
-            if res.get("reasons"):
-                st.write("⚠️ Reasons:")
-                for reason in res["reasons"]:
-                    st.write(f"- {reason}")
-            st.write("---")
+        st.dataframe(df, use_container_width=True)
 
-        # ===== Example Plotly Indicator =====
+        # ===== Plotly Indicator =====
         suspicious_count = sum(1 for r in results if r.get("reasons"))
         total_links = len(results)
         fig = go.Figure(go.Indicator(
@@ -57,4 +63,3 @@ if uploaded_file is not None:
 
     except Exception as e:
         st.error(f"Error processing the file: {e}")
-
