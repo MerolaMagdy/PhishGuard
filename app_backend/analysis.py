@@ -32,6 +32,12 @@ def init_cache():
 
 cache_conn = init_cache()
 
+def run_analysis_bytes(data: bytes):
+    from email import message_from_bytes
+    msg = message_from_bytes(data)
+    return run_analysis_from_message(msg)
+
+
 def cache_get(key):
     cur = cache_conn.cursor()
     cur.execute("SELECT response, ts FROM vt_cache WHERE key=?", (key,))
