@@ -10,6 +10,17 @@ from email.parser import BytesParser
 from html import unescape
 
 
+import streamlit as st
+from analysis import analyze_links
+
+uploaded_file = st.file_uploader("Choose a .eml file", type="eml")
+if uploaded_file is not None:
+    content = uploaded_file.read()
+    # parse content with your analysis code
+    results = analyze_links_from_bytes(content)
+    st.write(results)
+
+
 VT_API_KEY = None  
 VT_API_URL = "https://www.virustotal.com/api/v3/urls"
 CACHE_DB = "vt_cache.sqlite"
@@ -283,6 +294,7 @@ if __name__ == "__main__":
     with open("report.json", "w", encoding="utf-8") as f:
         json.dump(r, f, indent=4, ensure_ascii=False)
     print(json.dumps(r, indent=4, ensure_ascii=False))
+
 
 
 
