@@ -1,9 +1,7 @@
 import streamlit as st
 import os
 import tempfile
-from analysis import run_analysis, save_report_pdf as analysis_save_pdf  # import your analysis functions
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
+from analysis import run_analysis, save_report_pdf  # use your analysis.py functions
 import plotly.graph_objects as go
 
 # ===== Streamlit page setup =====
@@ -29,7 +27,7 @@ def show_gauge(score):
 uploaded_file = st.file_uploader("Upload a .eml file", type=["eml"])
 local_path_input = st.text_input("Or enter full path to .eml file", "")
 
-# ===== Analysis =====
+# Determine which file to analyze
 eml_path = None
 if uploaded_file:
     # Save uploaded file temporarily
@@ -39,35 +37,34 @@ if uploaded_file:
 elif local_path_input and os.path.isfile(local_path_input):
     eml_path = os.path.abspath(local_path_input)
 
+# ===== Run analysis if file exists =====
 if eml_path:
     with st.spinner("Analyzing email..."):
         report = run_analysis(eml_path)
 
         # Save PDF report
         pdf_path = eml_path + ".pdf"
-        analysis_save_pdf(report, pdf_path)
+        save_report_pdf(report, pdf_path)
 
-        # Display results
         st.success(f"Analysis complete — Risk: {report['overall_risk']} (Score: {report['risk_score']})")
 
+        # ===== Show gauge & findings =====
         col1, col2 = st.columns([1, 2])
         with col1:
             show_gauge(report['risk_score'])
-            st.write("**Subject**")
-            st.write(report.get("subject", "N/A"))
-            st.write("**From**")
-            st.write(report.get("from", "N/A"))
+            st.write("**Subject**", report.get("subject", "N/A"))
+            st.write("**From**", report.get("from", "N/A"))
         with col2:
             st.subheader("Header Findings")
-            for h in report.get("header_findings", []):
+            for h in report.get("header_findings") or []:
                 st.write("- " + str(h))
             st.subheader("Keywords")
-            raw_keywords = report.get("keyword_findings", [])
+            raw_keywords = report.get("keyword_findings") or []
             safe_keywords = [str(k) for k in raw_keywords if k is not None]
             st.write(", ".join(safe_keywords) if safe_keywords else "None")
             st.subheader("Link Findings")
-            for lf in report.get("link_findings", []):
-                reasons = lf.get("reasons", [])
+            for lf in report.get("link_findings") or []:
+                reasons = lf.get("reasons") or []
                 reasons_text = ", ".join(reasons) if reasons else "No specific reason"
                 st.write(f"- {lf.get('link')} — {reasons_text}")
 
