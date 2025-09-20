@@ -9,16 +9,6 @@ from email import policy
 from email.parser import BytesParser
 from html import unescape
 
-import streamlit as st
-from analysis import analyze_links
-
-uploaded_file = st.file_uploader("Choose a .eml file", type="eml")
-if uploaded_file is not None:
-    content = uploaded_file.read()
-    # parse content with your analysis code
-    results = analyze_links_from_bytes(content)
-    st.write(results)
-
 # ---------- CONFIG ----------
 VT_API_KEY = None  # خليه None لو مش عندك مفتاح؛ لو عندك حطيه من env var
 VT_API_URL = "https://www.virustotal.com/api/v3/urls"
@@ -26,7 +16,7 @@ CACHE_DB = "vt_cache.sqlite"
 CACHE_TTL = 60 * 60 * 24  # cache results 24 hours
 # ----------------------------
 
-# ---------- كاش بسيط sqlite ----------
+
 def init_cache():
     conn = sqlite3.connect(CACHE_DB)
     cur = conn.cursor()
@@ -74,14 +64,14 @@ def cache_set(key, value):
     cache_conn.commit()
 # --------------------------------------
 
-# ===== قراءة الإيميل من ملف =====
+
 def parse_eml(file_path):
     with open(file_path, "rb") as f:
         msg = BytesParser(policy=policy.default).parse(f)
 
     return _extract_msg_parts(msg)
 
-# ===== NEW: قراءة الإيميل من bytes (Streamlit upload) =====
+
 def parse_eml_bytes(file_bytes):
     msg = BytesParser(policy=policy.default).parsebytes(file_bytes)
     return _extract_msg_parts(msg)
@@ -98,14 +88,14 @@ def _extract_msg_parts(msg):
             if ctype == "text/plain":
                 body_text += part.get_content() or ""
             elif ctype == "text/html":
-                # إزالة tags بشكل بسيط للحصول على نص يحتوي URLs
+                
                 body_text += unescape(re.sub('<[^<]+?>', ' ', part.get_content() or ""))
     else:
         body_text = msg.get_content() or ""
 
     return subject, from_addr, return_path, body_text
 
-# ===== استخراج الروابط (أقوى) =====
+
 URL_REGEX = re.compile(
     r"""(?ix)\b((?:https?://|www\.)[^\s<>"'()]+)"""
 )
@@ -126,7 +116,7 @@ def extract_links(text):
 def is_ip_domain(netloc):
     return re.match(r"^\d{1,3}(\.\d{1,3}){3}$", netloc) is not None
 
-# ===== VirusTotal URL check (v3) =====
+
 def vt_check_url(url):
     """
     Returns dict with summary or None if no API key.
