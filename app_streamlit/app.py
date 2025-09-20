@@ -1,8 +1,12 @@
 import streamlit as st
 import os
+import sys
 import tempfile
-from analysis import run_analysis, save_report_pdf  # use your analysis.py functions
 import plotly.graph_objects as go
+
+# ===== Fix ImportError: add parent directory to path =====
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from analysis import run_analysis, save_report_pdf  # your analysis.py functions
 
 # ===== Streamlit page setup =====
 st.set_page_config(page_title="PhishGuard", layout="wide", page_icon="🛡️")
