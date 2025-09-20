@@ -34,9 +34,12 @@ def save_report_pdf(report, pdf_path):
     story.append(Spacer(1,12))
 
     story.append(Paragraph("Link Findings:", styles['Heading2']))
-    for lf in report['link_findings']:
-        story.append(Paragraph(f"{lf['link']} — {lf['reason']}", styles['Normal']))
-
+    for lf in report.get('link_findings') or []:
+        link = lf.get('link', '')
+        reasons = lf.get('reasons', [])
+        reasons_text = ", ".join(reasons) if reasons else "No specific reason"
+        story.append(Paragraph(f"{link} — {reasons_text}", styles['Normal']))
+    
     doc.build(story)
 
 @app.post("/analyze")
