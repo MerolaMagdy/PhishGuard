@@ -1,4 +1,3 @@
-# analysis.py (improved)
 import re
 import json
 import time
@@ -53,11 +52,19 @@ def cache_set(key, value):
     cache_conn.commit()
 # --------------------------------------
 
-# ===== قراءة الإيميل =====
+# ===== قراءة الإيميل من ملف =====
 def parse_eml(file_path):
     with open(file_path, "rb") as f:
         msg = BytesParser(policy=policy.default).parse(f)
 
+    return _extract_msg_parts(msg)
+
+# ===== NEW: قراءة الإيميل من bytes (Streamlit upload) =====
+def parse_eml_bytes(file_bytes):
+    msg = BytesParser(policy=policy.default).parsebytes(file_bytes)
+    return _extract_msg_parts(msg)
+
+def _extract_msg_parts(msg):
     subject = msg["subject"]
     from_addr = msg["from"]
     return_path = msg["return-path"]
@@ -199,7 +206,8 @@ def analyze_keywords(body_text):
     if not body_text:
         return findings
     body_lower = body_text.lower()
-    suspicious_keywords = ["urgent", "verify", "password", "account", "login", "click here", "update", "confirm", "bank", "social security", "ssn"]
+    suspicious_keywords = ["urgent", "verify", "password", "account", "login", "click here",
+                           "update", "confirm", "bank", "social security", "ssn"]
     for word in suspicious_keywords:
         idx = body_lower.find(word)
         if idx != -1:
@@ -209,19 +217,27 @@ def analyze_keywords(body_text):
             findings.append({"keyword": word, "snippet": snippet.strip()})
     return findings
 
-# ===== تشغيل التحليل كامل =====
+# ===== تشغيل التحليل كامل (من ملف path) =====
 def run_analysis(file_path):
     subject, from_addr, return_path, body_text = parse_eml(file_path)
+    return _make_report(subject, from_addr, return_path, body_text)
+
+# ===== NEW: تشغيل التحليل كامل (من bytes) =====
+def run_analysis_bytes(file_bytes):
+    subject, from_addr, return_path, body_text = parse_eml_bytes(file_bytes)
+    return _make_report(subject, from_addr, return_path, body_text)
+
+def _make_report(subject, from_addr, return_path, body_text):
     links = extract_links(body_text)
     link_findings = analyze_links(links)
     keyword_findings = analyze_keywords(body_text)
     header_findings = analyze_headers(from_addr, return_path)
 
-    # ===== حساب Risk Score (وزنات محسنة) =====
+    # ===== حساب Risk Score =====
     score = 0
     if any("Spoofed sender" in f for f in header_findings):
         score += 30
-    score += min(25, 5 * len(keyword_findings))  # حتى 25 نقطة للكلمات
+    score += min(25, 5 * len(keyword_findings))
     for lf in link_findings:
         if lf.get("malicious_votes", 0) > 0:
             score += 40
@@ -241,7 +257,7 @@ def run_analysis(file_path):
     elif score >= 40:
         overall_risk = "Medium"
 
-    report = {
+    return {
         "subject": subject,
         "from": from_addr,
         "return_path": return_path,
@@ -251,8 +267,6 @@ def run_analysis(file_path):
         "risk_score": score,
         "overall_risk": overall_risk,
     }
-
-    return report
 
 # إذا شغلت الملف مباشرة كـ script:
 if __name__ == "__main__":
