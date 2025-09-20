@@ -24,7 +24,7 @@ def generate_report(file_path):
     keyword_findings = analyze_keywords(mail)
     link_findings = analyze_links(mail)
 
-    # --- حساب الـRisk Score ---
+    
     risk_score = 0
     if any("Spoofed sender" in f for f in header_findings):
         risk_score += 40
@@ -52,7 +52,7 @@ def generate_report(file_path):
         "overall_risk": overall_risk
     }
 
-    # حفظ كـ JSON
+    
     with open("report.json", "w", encoding="utf-8") as f:
         json.dump(report, f, indent=4, ensure_ascii=False)
 
