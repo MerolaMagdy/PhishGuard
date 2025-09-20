@@ -9,6 +9,17 @@ import analysis as analysis_module
 # لو عندك مفتاح VirusTotal
 analysis_module.VT_API_KEY = os.getenv("VT_API_KEY", None)
 
+import streamlit as st
+from analysis import analyze_links
+
+uploaded_file = st.file_uploader("Choose a .eml file", type="eml")
+if uploaded_file is not None:
+    content = uploaded_file.read()
+    # parse content with your analysis code
+    results = analyze_links_from_bytes(content)
+    st.write(results)
+
+
 # ===== حفظ التقرير كـ PDF =====
 def save_report_pdf(report, pdf_path):
     styles = getSampleStyleSheet()
