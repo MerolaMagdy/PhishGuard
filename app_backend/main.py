@@ -7,15 +7,6 @@ from analysis import run_analysis
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 
-import streamlit as st
-from analysis import analyze_links
-
-uploaded_file = st.file_uploader("Choose a .eml file", type="eml")
-if uploaded_file is not None:
-    content = uploaded_file.read()
-    # parse content with your analysis code
-    results = analyze_links_from_bytes(content)
-    st.write(results)
 
 
 app = FastAPI()
