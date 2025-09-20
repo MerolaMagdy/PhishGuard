@@ -9,6 +9,16 @@ from email import policy
 from email.parser import BytesParser
 from html import unescape
 
+import streamlit as st
+from analysis import analyze_links
+
+uploaded_file = st.file_uploader("Choose a .eml file", type="eml")
+if uploaded_file is not None:
+    content = uploaded_file.read()
+    # parse content with your analysis code
+    results = analyze_links_from_bytes(content)
+    st.write(results)
+
 # ---------- CONFIG ----------
 VT_API_KEY = None  # خليه None لو مش عندك مفتاح؛ لو عندك حطيه من env var
 VT_API_URL = "https://www.virustotal.com/api/v3/urls"
