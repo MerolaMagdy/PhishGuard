@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 from email import policy
 from email.parser import BytesParser
 
-# ===== قراءة الإيميل =====
+
 def parse_eml(file_path):
     with open(file_path, "rb") as f:
         msg = BytesParser(policy=policy.default).parse(f)
@@ -25,7 +25,7 @@ def parse_eml(file_path):
     return subject, from_addr, return_path, body_text
 
 
-# ===== استخراج الروابط =====
+
 def extract_links(text):
     pattern = r"(https?://[^\s]+)"
     return re.findall(pattern, text)
@@ -50,7 +50,7 @@ def analyze_links(links):
     return suspicious
 
 
-# ===== تحليل الهيدر =====
+
 def analyze_headers(from_addr, return_path):
     findings = []
     if from_addr and return_path and return_path.lower() != from_addr.lower():
@@ -58,7 +58,7 @@ def analyze_headers(from_addr, return_path):
     return findings
 
 
-# ===== تحليل الكلمات المفتاحية =====
+
 def analyze_keywords(body_text):
     findings = []
     body_lower = body_text.lower()
@@ -69,7 +69,7 @@ def analyze_keywords(body_text):
     return findings
 
 
-# ===== تشغيل التحليل كامل =====
+
 if __name__ == "__main__":
     eml_file = "sample.eml"  # غيّري باسم ملفك
 
@@ -80,7 +80,7 @@ if __name__ == "__main__":
     keyword_findings = analyze_keywords(body_text)
     header_findings = analyze_headers(from_addr, return_path)
 
-    # حساب Risk Score
+    
     risk_score = 0
     if any("Spoofed sender" in f for f in header_findings):
         risk_score += 40
@@ -108,7 +108,7 @@ if __name__ == "__main__":
         "overall_risk": overall_risk,
     }
 
-    # حفظ تقرير JSON
+    
     with open("report.json", "w", encoding="utf-8") as f:
         json.dump(report, f, indent=4, ensure_ascii=False)
 
