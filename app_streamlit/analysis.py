@@ -95,8 +95,7 @@ def extract_links(text):
         if l.startswith("www."):
             l = "http://" + l
         cleaned.append(l)
-    # إزالة التكرار مع الحفاظ على الترتيب
-    return list(dict.fromkeys(cleaned))
+    return list(dict.fromkeys(cleaned))  # إزالة التكرار مع الحفاظ على الترتيب
 
 def is_ip_domain(netloc):
     return re.match(r"^\d{1,3}(\.\d{1,3}){3}$", netloc) is not None
@@ -154,7 +153,13 @@ def analyze_links(links):
             netloc = parsed.netloc.split(":")[0]
             ext = tldextract.extract(netloc)
             domain = f"{ext.domain}.{ext.suffix}" if ext.suffix else ext.domain
-            entry = {"link": link, "domain": domain, "reasons": []}
+
+            entry = {
+                "link": link,
+                # >>> التعديل هنا: إظهار IP بدلاً من None <<<
+                "domain": "IP" if is_ip_domain(netloc) else domain,
+                "reasons": []
+            }
 
             # قواعد محلية
             if is_ip_domain(netloc):
