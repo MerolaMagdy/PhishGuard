@@ -8,3 +8,5 @@ fpdf2
 requests==2.32.0
 plotly==5.17.0
 streamlit==1.29.0
+python-dotenv
+vt-py
