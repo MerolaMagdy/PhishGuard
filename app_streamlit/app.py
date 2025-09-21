@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 import plotly.graph_objects as go
-from analysis import run_analysis
+#from analysis import run_analysis
 import analysis as analysis_module
 
 # مفتاح VirusTotal من متغير البيئة لو مُعرّف
