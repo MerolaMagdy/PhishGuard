@@ -272,5 +272,3 @@ if __name__ == "__main__":
     with open("report.json", "w", encoding="utf-8") as f:
         json.dump(r, f, indent=4, ensure_ascii=False)
     print(json.dumps(r, indent=4, ensure_ascii=False))
-
-
