@@ -128,12 +128,12 @@ def analyze_links(links):
         if re.search(r"-login|verify|update-account", link, re.I):
             entry["reasons"].append("URL resembles login/verify page")
 
-        vt = vt_check_url(link)
-        if vt and "stats" in vt:
-            mal = vt["stats"].get("malicious", 0) + vt["stats"].get("suspicious", 0)
-            if mal > 0:
-                entry["reasons"].append(f"VirusTotal flagged ({mal})")
-                entry["malicious_votes"] = mal
+       # vt = vt_check_url(link)
+        #if vt and "stats" in vt:
+            #mal = vt["stats"].get("malicious", 0) + vt["stats"].get("suspicious", 0)
+            #if mal > 0:
+               # entry["reasons"].append(f"VirusTotal flagged ({mal})")
+               # entry["malicious_votes"] = mal
         results.append(entry)
     return results
 
