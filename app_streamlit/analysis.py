@@ -10,6 +10,20 @@ from email.parser import BytesParser
 from html import unescape
 import tempfile
 
+
+
+uploaded_file = st.file_uploader("Upload a .eml file", type=["eml"])
+
+if uploaded_file is not None:
+    # احفظ الملف المرفوع مؤقتاً
+    temp_path = "temp.eml"
+    with open(temp_path, "wb") as f:
+        f.write(uploaded_file.read())
+
+    # نفّذ التحليل و اعرض النتيجة
+    report = run_analysis(temp_path)
+    st.subheader("نتيجة التحليل")
+    st.json(report)
 # ================= إعدادات عامة =================
 VT_API_KEY = None      # ضع مفتاح VirusTotal هنا أو من متغير البيئة
 VT_API_URL = "https://www.virustotal.com/api/v3/urls"
@@ -272,3 +286,4 @@ if __name__ == "__main__":
     with open("report.json", "w", encoding="utf-8") as f:
         json.dump(r, f, indent=4, ensure_ascii=False)
     print(json.dumps(r, indent=4, ensure_ascii=False))
+
