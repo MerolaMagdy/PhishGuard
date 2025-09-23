@@ -131,9 +131,6 @@ def main():
                 tmp_file.write(uploaded_file.getvalue())
                 temp_path = tmp_file.name
             
-            st.write(f"📁 Temporary file created at: {temp_path}")
-            st.write(f"📄 File exists: {os.path.exists(temp_path)}")
-            
             # تحليل الملف
             report = run_analysis(temp_path)
                 
