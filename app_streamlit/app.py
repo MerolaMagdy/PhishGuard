@@ -1,226 +1,34 @@
 import streamlit as st
 import os
 import plotly.graph_objects as go
-import tempfile
+from analysis import run_analysis
+import analysis as analysis_module
+analysis_module.VT_API_KEY = os.getenv("VT_API_KEY", None)
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
 from html import escape
-import sys
-
-# Add the parent directory to Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# Import analysis functions directly (in-memory version)
-from email import policy
-from email.parser import BytesParser
-import re
-from html import unescape
-from urllib.parse import urlparse
-import tldextract
-
-# ===== تحليل البريد الإلكتروني (الإصدار المحسن) =====
-def parse_eml_from_bytes(file_bytes):
-    """Parse EML content directly from bytes (no file system access)"""
-    try:
-        msg = BytesParser(policy=policy.default).parsebytes(file_bytes)
-        
-        subject = msg.get("subject", "No Subject") or "No Subject"
-        from_addr = msg.get("from", "Unknown Sender") or "Unknown Sender"
-        return_path = msg.get("return-path", from_addr) or from_addr
-
-        body_text = ""
-        
-        if msg.is_multipart():
-            for part in msg.walk():
-                content_type = part.get_content_type()
-                content_disposition = str(part.get("Content-Disposition", ""))
-                
-                # Skip attachments
-                if "attachment" in content_disposition:
-                    continue
-                    
-                if content_type == "text/plain":
-                    try:
-                        payload = part.get_payload(decode=True)
-                        if payload:
-                            body_text += payload.decode('utf-8', errors='ignore') + "\n"
-                    except Exception as e:
-                        try:
-                            content = part.get_content()
-                            if content:
-                                body_text += str(content) + "\n"
-                        except:
-                            pass
-                            
-                elif content_type == "text/html":
-                    try:
-                        payload = part.get_payload(decode=True)
-                        if payload:
-                            html_content = payload.decode('utf-8', errors='ignore')
-                            text_content = re.sub('<[^<]+?>', ' ', html_content)
-                            body_text += unescape(text_content) + "\n"
-                    except Exception as e:
-                        pass
-        else:
-            try:
-                payload = msg.get_payload(decode=True)
-                if payload:
-                    body_text = payload.decode('utf-8', errors='ignore')
-                else:
-                    body_text = msg.get_payload() or ""
-            except Exception as e:
-                body_text = msg.get_payload() or ""
-                
-        return subject, from_addr, return_path, body_text
-        
-    except Exception as e:
-        return "Error", "Error", "Error", ""
-
-def extract_links(text):
-    """Extract links from text"""
-    if not text:
-        return []
-    try:
-        URL_REGEX = re.compile(r"""(?ix)\b((?:https?://|www\.)[^\s<>"'()]+)""")
-        text = unescape(text)
-        links = URL_REGEX.findall(text)
-        cleaned = []
-        for l in links:
-            l = l.rstrip(".,;:!)\"'")
-            if l.startswith("www."):
-                l = "http://" + l
-            cleaned.append(l)
-        return list(dict.fromkeys(cleaned))
-    except:
-        return []
-
-def analyze_links(links):
-    """Analyze links for suspicious characteristics"""
-    suspicious = []
-    for link in links:
-        try:
-            parsed = urlparse(link)
-            netloc = parsed.netloc.split(":")[0]
-            ext = tldextract.extract(netloc)
-            domain = f"{ext.domain}.{ext.suffix}" if ext.suffix else ext.domain
-            entry = {"link": link, "domain": domain, "reasons": []}
-
-            if re.match(r"^\d{1,3}(\.\d{1,3}){3}$", netloc):
-                entry["reasons"].append("Uses IP instead of domain")
-            if not ext.suffix:
-                entry["reasons"].append("No valid TLD")
-            if "@" in link:
-                entry["reasons"].append("URL contains @ (possible redirect/trick)")
-            if re.search(r"-login|secure-login|update-account|verify-account", link, re.I):
-                entry["reasons"].append("URL path looks like credential phishing (login/verify/update)")
-
-            suspicious.append(entry)
-        except:
-            suspicious.append({"link": link, "reason": "analysis_error"})
-    return suspicious
-
-def analyze_keywords(body_text):
-    """Analyze text for suspicious keywords"""
-    findings = []
-    if not body_text:
-        return findings
-    try:
-        body_lower = body_text.lower()
-        suspicious_keywords = ["urgent", "verify", "password", "account", "login",
-                               "click here", "update", "confirm", "bank", "social security", "ssn"]
-        for word in suspicious_keywords:
-            idx = body_lower.find(word)
-            if idx != -1:
-                start = max(0, idx - 30)
-                end = idx + len(word) + 30
-                snippet = body_text[start:end].replace("\n", " ")
-                findings.append({"keyword": word, "snippet": snippet.strip()})
-    except:
-        pass
-    return findings
-
-def analyze_headers(from_addr, return_path):
-    """Analyze email headers"""
-    findings = []
-    try:
-        if from_addr and return_path:
-            from_str = ", ".join(from_addr) if isinstance(from_addr, (list, tuple)) else str(from_addr)
-            rp = ", ".join(return_path) if isinstance(return_path, (list, tuple)) else str(return_path)
-            if rp and from_str and rp.lower() not in from_str.lower():
-                findings.append(f"Spoofed sender? From: {from_str} vs Return-Path: {rp}")
-    except:
-        pass
-    return findings
-
-def run_analysis(file_bytes):
-    """Main analysis function that works in memory"""
-    try:
-        subject, from_addr, return_path, body_text = parse_eml_from_bytes(file_bytes)
-        
-        if not body_text or body_text == "":
-            return None
-            
-        links = extract_links(body_text)
-        link_findings = analyze_links(links)
-        keyword_findings = analyze_keywords(body_text)
-        header_findings = analyze_headers(from_addr, return_path)
-
-        # ===== حساب Risk Score (High Risk version) =====
-        score = 0
-        if any("Spoofed sender" in f for f in header_findings):
-            score += 30
-        score += min(35, 5 * len(keyword_findings))
-        
-        for lf in link_findings:
-            if lf.get("reasons"):
-                if "Uses IP instead of domain" in lf.get("reasons", []):
-                    score += 20
-                if any("login" in r.lower() or "verify" in r.lower() for r in lf.get("reasons", [])):
-                    score += 15
-                score += 10  # Base score for any suspicious link
-
-        if len(header_findings) > 1:
-            score += 5
-            
-        score = min(100, score)
-
-        overall_risk = "Low"
-        if score >= 70:
-            overall_risk = "High"
-        elif score >= 40:
-            overall_risk = "Medium"
-
-        return {
-            "subject": subject,
-            "from": from_addr,
-            "return_path": return_path,
-            "header_findings": header_findings,
-            "keyword_findings": keyword_findings,
-            "link_findings": link_findings,
-            "risk_score": score,
-            "overall_risk": overall_risk,
-        }
-        
-    except Exception as e:
-        return None
+import tempfile
+import json
 
 # ===== حفظ التقرير كـ PDF =====
 def save_report_pdf(report, pdf_path):
     try:
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-        from reportlab.lib.styles import getSampleStyleSheet
-        
         styles = getSampleStyleSheet()
         doc = SimpleDocTemplate(pdf_path)
         story = []
 
+        # إضافة عنوان التقرير
         story.append(Paragraph("PhishGuard - Phishing Email Analysis Report", styles['Title']))
         story.append(Spacer(1, 12))
         
+        # معلومات البريد الأساسية
         story.append(Paragraph(f"Subject: {report.get('subject', 'N/A')}", styles['Heading2']))
         story.append(Spacer(1, 6))
         story.append(Paragraph(f"From: {report.get('from', 'N/A')}", styles['Normal']))
         story.append(Paragraph(f"Return-Path: {report.get('return_path', 'N/A')}", styles['Normal']))
         story.append(Spacer(1, 12))
         
+        # تقييم المخاطر
         risk_level = report.get('overall_risk', 'N/A')
         risk_score = report.get('risk_score', 0)
         story.append(
@@ -231,6 +39,7 @@ def save_report_pdf(report, pdf_path):
         )
         story.append(Spacer(1, 12))
 
+        # نتائج تحليل الرأس
         story.append(Paragraph("Header Analysis Findings:", styles['Heading2']))
         header_findings = report.get("header_findings") or []
         if header_findings:
@@ -240,15 +49,17 @@ def save_report_pdf(report, pdf_path):
             story.append(Paragraph("No significant header issues found.", styles['Normal']))
         story.append(Spacer(1, 12))
 
+        # نتائج الكلمات المفتاحية
         story.append(Paragraph("Keyword Analysis Findings:", styles['Heading2']))
         keyword_findings = report.get("keyword_findings") or []
-        if keyword_findings:
-            for kf in keyword_findings:
-                story.append(Paragraph(f"- {kf.get('keyword', 'N/A')}: {kf.get('snippet', '')}", styles['Normal']))
+        if keyword_findings and isinstance(keyword_findings, list) and len(keyword_findings) > 0:
+            keywords_text = ", ".join([str(k) for k in keyword_findings if k is not None])
+            story.append(Paragraph(keywords_text, styles['Normal']))
         else:
             story.append(Paragraph("No suspicious keywords found.", styles['Normal']))
         story.append(Spacer(1, 12))
 
+        # نتائج تحليل الروابط
         story.append(Paragraph("Link Analysis Findings:", styles['Heading2']))
         link_findings = report.get("link_findings") or []
         if link_findings:
@@ -261,6 +72,7 @@ def save_report_pdf(report, pdf_path):
         else:
             story.append(Paragraph("No suspicious links found.", styles['Normal']))
 
+        # بناء التقرير
         doc.build(story)
         return True
     except Exception as e:
@@ -314,9 +126,19 @@ def main():
     if uploaded_file is not None:
         try:
             with st.spinner("Analyzing email content..."):
-                # معالجة الملف مباشرة من الذاكرة (بدون ملفات مؤقتة)
-                file_bytes = uploaded_file.getvalue()
-                report = run_analysis(file_bytes)
+                # حفظ الملف مؤقتاً
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".eml") as tmp_file:
+                    tmp_file.write(uploaded_file.getvalue())
+                    temp_path = tmp_file.name
+                
+                # تحليل الملف
+                report = run_analysis(temp_path)
+                
+                # تنظيف الملف المؤقت
+                try:
+                    os.unlink(temp_path)
+                except:
+                    pass
                 
                 if report:
                     # إنشاء التقرير PDF
@@ -359,9 +181,9 @@ def main():
                         # نتائج الكلمات المفتاحية
                         with st.expander("Keyword Analysis Results"):
                             keyword_findings = report.get("keyword_findings") or []
-                            if keyword_findings:
-                                for finding in keyword_findings:
-                                    st.write(f"• **{finding['keyword']}**: {finding['snippet']}")
+                            if keyword_findings and isinstance(keyword_findings, list) and len(keyword_findings) > 0:
+                                keywords_text = ", ".join([str(k) for k in keyword_findings if k is not None])
+                                st.write(keywords_text)
                             else:
                                 st.info("No suspicious keywords found.")
                         
@@ -372,10 +194,10 @@ def main():
                                 for lf in link_findings:
                                     link = lf.get('link', '')
                                     reasons = lf.get('reasons', [])
-                                    if reasons:
-                                        st.warning(f"**Link:** {link}")
-                                        st.write(f"**Reasons:** {', '.join(reasons)}")
-                                        st.write("---")
+                                    reasons_text = ", ".join(reasons) if reasons else "No specific reason"
+                                    st.warning(f"**Link:** {link}")
+                                    st.write(f"**Reasons:** {reasons_text}")
+                                    st.write("---")
                             else:
                                 st.info("No suspicious links found.")
                     
