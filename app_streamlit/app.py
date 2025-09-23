@@ -33,35 +33,71 @@ def parse_eml_from_bytes(file_bytes):
         return_path = msg.get("return-path", from_addr) or from_addr
 
         body_text = ""
+        
+        # Debug: Show what parts we found
+        st.write(f"📧 Email parts: Multipart={msg.is_multipart()}")
+        
         if msg.is_multipart():
             for part in msg.walk():
-                ctype = part.get_content_type()
-                if ctype == "text/plain":
+                content_type = part.get_content_type()
+                content_disposition = str(part.get("Content-Disposition", ""))
+                
+                # Skip attachments
+                if "attachment" in content_disposition:
+                    continue
+                    
+                if content_type == "text/plain":
                     try:
-                        content = part.get_content()
-                        if content:
-                            body_text += str(content)
-                    except:
-                        pass
-                elif ctype == "text/html":
+                        # Get payload and decode properly
+                        payload = part.get_payload(decode=True)
+                        if payload:
+                            body_text += payload.decode('utf-8', errors='ignore') + "\n"
+                    except Exception as e:
+                        st.write(f"❌ Error reading text/plain: {e}")
+                        try:
+                            # Fallback: get content without decoding
+                            content = part.get_content()
+                            if content:
+                                body_text += str(content) + "\n"
+                        except:
+                            pass
+                            
+                elif content_type == "text/html":
                     try:
-                        content = part.get_content()
-                        if content:
-                            cleaned_content = re.sub('<[^<]+?>', ' ', str(content))
-                            body_text += unescape(cleaned_content)
-                    except:
-                        pass
+                        payload = part.get_payload(decode=True)
+                        if payload:
+                            html_content = payload.decode('utf-8', errors='ignore')
+                            # Simple HTML to text conversion
+                            text_content = re.sub('<[^<]+?>', ' ', html_content)
+                            body_text += unescape(text_content) + "\n"
+                    except Exception as e:
+                        st.write(f"❌ Error reading text/html: {e}")
         else:
+            # Not multipart - single part email
             try:
-                content = msg.get_content()
-                body_text = str(content) if content else ""
-            except:
-                pass
+                payload = msg.get_payload(decode=True)
+                if payload:
+                    body_text = payload.decode('utf-8', errors='ignore')
+                else:
+                    body_text = msg.get_payload() or ""
+            except Exception as e:
+                st.write(f"❌ Error reading single part: {e}")
+                body_text = msg.get_payload() or ""
+        
+        # Debug information
+        st.write(f"📝 Subject: {subject}")
+        st.write(f"👤 From: {from_addr}")
+        st.write(f"📨 Body length: {len(body_text)} characters")
+        
+        if len(body_text) > 500:
+            st.write(f"📄 Body preview: {body_text[:500]}...")
+        else:
+            st.write(f"📄 Body: {body_text}")
                 
         return subject, from_addr, return_path, body_text
         
     except Exception as e:
-        st.error(f"Error parsing EML: {e}")
+        st.error(f"❌ Error parsing EML: {e}")
         return "Error", "Error", "Error", ""
 
 def extract_links(text):
