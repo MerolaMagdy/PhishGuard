@@ -1,252 +1,247 @@
 import streamlit as st
-import os
-import plotly.graph_objects as go
-import analysis as analysis_module
-analysis_module.VT_API_KEY = os.getenv("VT_API_KEY", None)
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
-from html import escape
 import tempfile
-import json
+import os
 import sys
+from email import policy
+from email.parser import BytesParser
+import re
+from html import unescape
+from urllib.parse import urlparse
+import tldextract
 
 # Add the parent directory to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from analysis import run_analysis
-from report_utils import save_report_pdf, show_gauge
+st.set_page_config(page_title="PhishGuard", layout="wide", page_icon="🛡️")
 
-# ===== حفظ التقرير كـ PDF =====
-def save_report_pdf(report, pdf_path):
+# ترويسة التطبيق
+st.markdown("""
+    <div style='background-color:#0e1117; padding:20px; border-radius:10px; margin-bottom:20px;'>
+        <h1 style='color:#00e5ff; text-align:center;'>PhishGuard — Phishing Email Analyzer</h1>
+        <p style='color:#ffffff; text-align:center;'>Upload a .eml file to analyze email content and generate a PDF report</p>
+    </div>
+""", unsafe_allow_html=True)
+
+# Simplified analysis functions that work in memory
+def parse_eml_from_bytes(file_bytes):
+    """Parse EML content directly from bytes (no file system access)"""
     try:
-        styles = getSampleStyleSheet()
-        doc = SimpleDocTemplate(pdf_path)
-        story = []
-
-        # إضافة عنوان التقرير
-        story.append(Paragraph("PhishGuard - Phishing Email Analysis Report", styles['Title']))
-        story.append(Spacer(1, 12))
+        msg = BytesParser(policy=policy.default).parsebytes(file_bytes)
         
-        # معلومات البريد الأساسية
-        story.append(Paragraph(f"Subject: {report.get('subject', 'N/A')}", styles['Heading2']))
-        story.append(Spacer(1, 6))
-        story.append(Paragraph(f"From: {report.get('from', 'N/A')}", styles['Normal']))
-        story.append(Paragraph(f"Return-Path: {report.get('return_path', 'N/A')}", styles['Normal']))
-        story.append(Spacer(1, 12))
-        
-        # تقييم المخاطر
-        risk_level = report.get('overall_risk', 'N/A')
-        risk_score = report.get('risk_score', 0)
-        story.append(
-            Paragraph(
-                f"Overall Risk: {risk_level} (Score: {risk_score})",
-                styles['Heading2']
-            )
-        )
-        story.append(Spacer(1, 12))
+        subject = msg.get("subject", "No Subject") or "No Subject"
+        from_addr = msg.get("from", "Unknown Sender") or "Unknown Sender"
+        return_path = msg.get("return-path", from_addr) or from_addr
 
-        # نتائج تحليل الرأس
-        story.append(Paragraph("Header Analysis Findings:", styles['Heading2']))
-        header_findings = report.get("header_findings") or []
+        body_text = ""
+        if msg.is_multipart():
+            for part in msg.walk():
+                ctype = part.get_content_type()
+                if ctype == "text/plain":
+                    try:
+                        content = part.get_content()
+                        if content:
+                            body_text += str(content)
+                    except:
+                        pass
+                elif ctype == "text/html":
+                    try:
+                        content = part.get_content()
+                        if content:
+                            cleaned_content = re.sub('<[^<]+?>', ' ', str(content))
+                            body_text += unescape(cleaned_content)
+                    except:
+                        pass
+        else:
+            try:
+                content = msg.get_content()
+                body_text = str(content) if content else ""
+            except:
+                pass
+                
+        return subject, from_addr, return_path, body_text
+        
+    except Exception as e:
+        st.error(f"Error parsing EML: {e}")
+        return "Error", "Error", "Error", ""
+
+def extract_links(text):
+    """Extract links from text"""
+    if not text:
+        return []
+    try:
+        URL_REGEX = re.compile(r"""(?ix)\b((?:https?://|www\.)[^\s<>"'()]+)""")
+        text = unescape(text)
+        links = URL_REGEX.findall(text)
+        cleaned = []
+        for l in links:
+            l = l.rstrip(".,;:!)\"'")
+            if l.startswith("www."):
+                l = "http://" + l
+            cleaned.append(l)
+        return list(dict.fromkeys(cleaned))
+    except:
+        return []
+
+def analyze_links(links):
+    """Analyze links for suspicious characteristics"""
+    suspicious = []
+    for link in links:
+        try:
+            parsed = urlparse(link)
+            netloc = parsed.netloc.split(":")[0]
+            ext = tldextract.extract(netloc)
+            domain = f"{ext.domain}.{ext.suffix}" if ext.suffix else ext.domain
+            entry = {"link": link, "domain": domain, "reasons": []}
+
+            # Basic link analysis
+            if re.match(r"^\d{1,3}(\.\d{1,3}){3}$", netloc):
+                entry["reasons"].append("Uses IP instead of domain")
+            if not ext.suffix:
+                entry["reasons"].append("No valid TLD")
+            if "@" in link:
+                entry["reasons"].append("URL contains @")
+            if re.search(r"-login|secure-login|update-account|verify-account", link, re.I):
+                entry["reasons"].append("Suspicious URL path")
+
+            suspicious.append(entry)
+        except:
+            suspicious.append({"link": link, "reason": "analysis_error"})
+    return suspicious
+
+def analyze_keywords(body_text):
+    """Analyze text for suspicious keywords"""
+    findings = []
+    if not body_text:
+        return findings
+    try:
+        body_lower = body_text.lower()
+        suspicious_keywords = ["urgent", "verify", "password", "account", "login",
+                               "click here", "update", "confirm", "bank", "social security", "ssn"]
+        for word in suspicious_keywords:
+            if word in body_lower:
+                findings.append({"keyword": word, "snippet": f"Found '{word}' in email"})
+    except:
+        pass
+    return findings
+
+def analyze_headers(from_addr, return_path):
+    """Analyze email headers"""
+    findings = []
+    try:
+        if from_addr and return_path and from_addr != return_path:
+            findings.append(f"Sender mismatch: From: {from_addr} vs Return-Path: {return_path}")
+    except:
+        pass
+    return findings
+
+def run_analysis(file_bytes):
+    """Main analysis function that works in memory"""
+    try:
+        subject, from_addr, return_path, body_text = parse_eml_from_bytes(file_bytes)
+        
+        if not body_text:
+            return None
+            
+        links = extract_links(body_text)
+        link_findings = analyze_links(links)
+        keyword_findings = analyze_keywords(body_text)
+        header_findings = analyze_headers(from_addr, return_path)
+
+        # Calculate risk score
+        score = 0
         if header_findings:
-            for h in header_findings:
-                story.append(Paragraph(f"- {h}", styles['Normal']))
-        else:
-            story.append(Paragraph("No significant header issues found.", styles['Normal']))
-        story.append(Spacer(1, 12))
+            score += 30
+        score += min(35, 5 * len(keyword_findings))
+        
+        for lf in link_findings:
+            if lf.get("reasons"):
+                score += 20
 
-        # نتائج الكلمات المفتاحية
-        story.append(Paragraph("Keyword Analysis Findings:", styles['Heading2']))
-        keyword_findings = report.get("keyword_findings") or []
-        if keyword_findings and isinstance(keyword_findings, list) and len(keyword_findings) > 0:
-            keywords_text = ", ".join([str(k) for k in keyword_findings if k is not None])
-            story.append(Paragraph(keywords_text, styles['Normal']))
-        else:
-            story.append(Paragraph("No suspicious keywords found.", styles['Normal']))
-        story.append(Spacer(1, 12))
+        score = min(100, score)
+        
+        overall_risk = "High" if score >= 70 else "Medium" if score >= 40 else "Low"
 
-        # نتائج تحليل الروابط
-        story.append(Paragraph("Link Analysis Findings:", styles['Heading2']))
-        link_findings = report.get("link_findings") or []
-        if link_findings:
-            for lf in link_findings:
-                link = lf.get('link', '')
-                reasons = lf.get('reasons', [])
-                reasons_text = ", ".join(reasons) if reasons else "No specific reason"
-                story.append(Paragraph(f"- {link}", styles['Normal']))
-                story.append(Paragraph(f"  Reasons: {reasons_text}", styles['Normal']))
-        else:
-            story.append(Paragraph("No suspicious links found.", styles['Normal']))
-
-        # بناء التقرير
-        doc.build(story)
-        return True
+        return {
+            "subject": subject,
+            "from": from_addr,
+            "return_path": return_path,
+            "header_findings": header_findings,
+            "keyword_findings": keyword_findings,
+            "link_findings": link_findings,
+            "risk_score": score,
+            "overall_risk": overall_risk,
+        }
+        
     except Exception as e:
-        st.error(f"Error generating PDF: {str(e)}")
-        return False
+        st.error(f"Analysis error: {e}")
+        return None
 
-# ===== رسم مقياس المخاطر =====
+# Simplified UI functions
 def show_gauge(score):
-    try:
-        fig = go.Figure(go.Indicator(
-            mode="gauge+number",
-            value=score,
-            number={'suffix': "%"},
-            domain={'x': [0, 1], 'y': [0, 1]},
-            gauge={
-                'axis': {'range': [0, 100], 'tickwidth': 1},
-                'bar': {'color': "darkblue"},
-                'steps': [
-                    {'range': [0, 30], 'color': "lightgreen"},
-                    {'range': [30, 70], 'color': "yellow"},
-                    {'range': [70, 100], 'color': "red"}
-                ],
-                'threshold': {
-                    'line': {'color': "red", 'width': 4},
-                    'thickness': 0.75,
-                    'value': score
-                }
-            },
-            title={'text': "Risk Score", 'font': {'size': 24}}
-        ))
-        fig.update_layout(height=300, margin=dict(l=20, r=20, t=50, b=10))
-        st.plotly_chart(fig, use_container_width=True)
-    except Exception as e:
-        st.error(f"Error creating gauge: {str(e)}")
+    """Simple gauge display"""
+    st.metric("Risk Score", f"{score}/100")
+    
+def save_report_pdf(report, filename):
+    """Simple PDF report (placeholder)"""
+    # For now, just return success - you can implement PDF generation later
+    return True
 
-# ===== واجهة Streamlit =====
 def main():
-    st.set_page_config(page_title="PhishGuard", layout="wide", page_icon="🛡️")
-    
-    # ترويسة التطبيق
-    st.markdown("""
-        <div style='background-color:#0e1117; padding:20px; border-radius:10px; margin-bottom:20px;'>
-            <h1 style='color:#00e5ff; text-align:center;'>PhishGuard — Phishing Email Analyzer</h1>
-            <p style='color:#ffffff; text-align:center;'>Upload a .eml file to analyze email content and generate a PDF report</p>
-        </div>
-    """, unsafe_allow_html=True)
-    
-    # قسم رفع الملف
-    uploaded_file = st.file_uploader("Choose a .eml file", type=["eml"], help="Select an email file in .eml format to analyze")
+    uploaded_file = st.file_uploader("Choose a .eml file", type=["eml"], 
+                                   help="Select an email file in .eml format to analyze")
     
     if uploaded_file is not None:
         try:
             with st.spinner("Analyzing email content..."):
-                # حفظ الملف مؤقتاً
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".eml") as tmp_file:
-                    tmp_file.write(uploaded_file.getvalue())
-                    temp_path = tmp_file.name
-                
-                # تحليل الملف
-                report = run_analysis(temp_path)
-                
-                # تنظيف الملف المؤقت
-                try:
-                    os.unlink(temp_path)
-                except:
-                    pass
+                # Process the file directly from memory - no temp files needed
+                file_bytes = uploaded_file.getvalue()
+                report = run_analysis(file_bytes)
                 
                 if report:
-                    # إنشاء التقرير PDF
-                    pdf_path = "phishguard_report.pdf"
-                    pdf_success = save_report_pdf(report, pdf_path)
-                    
-                    # عرض النتائج
                     st.success("✅ Analysis completed successfully!")
                     
-                    # تقسيم الصفحة إلى أعمدة
+                    # Display results
                     col1, col2 = st.columns([1, 2])
                     
                     with col1:
                         st.subheader("Email Overview")
                         show_gauge(report.get('risk_score', 0))
-                        
                         st.info(f"**Risk Level:** {report.get('overall_risk', 'N/A')}")
-                        
                         st.write("**Subject**")
                         st.code(report.get("subject", "N/A"), language=None)
-                        
                         st.write("**From**")
                         st.code(report.get("from", "N/A"), language=None)
-                        
-                        st.write("**Return Path**")
-                        st.code(report.get("return_path", "N/A"), language=None)
                     
                     with col2:
                         st.subheader("Detailed Analysis")
                         
-                        # نتائج تحليل الرأس
-                        with st.expander("Header Analysis Results"):
-                            header_findings = report.get("header_findings") or []
-                            if header_findings:
-                                for finding in header_findings:
+                        if report.get("header_findings"):
+                            with st.expander("Header Analysis Results"):
+                                for finding in report["header_findings"]:
                                     st.write(f"• {finding}")
-                            else:
-                                st.info("No header issues detected.")
                         
-                        # نتائج الكلمات المفتاحية
-                        with st.expander("Keyword Analysis Results"):
-                            keyword_findings = report.get("keyword_findings") or []
-                            if keyword_findings and isinstance(keyword_findings, list) and len(keyword_findings) > 0:
-                                keywords_text = ", ".join([str(k) for k in keyword_findings if k is not None])
-                                st.write(keywords_text)
-                            else:
-                                st.info("No suspicious keywords found.")
+                        if report.get("keyword_findings"):
+                            with st.expander("Keyword Analysis Results"):
+                                for finding in report["keyword_findings"]:
+                                    st.write(f"• {finding['keyword']}")
                         
-                        # نتائج تحليل الروابط
-                        with st.expander("Link Analysis Results"):
-                            link_findings = report.get("link_findings") or []
-                            if link_findings:
-                                for lf in link_findings:
-                                    link = lf.get('link', '')
-                                    reasons = lf.get('reasons', [])
-                                    reasons_text = ", ".join(reasons) if reasons else "No specific reason"
-                                    st.warning(f"**Link:** {link}")
-                                    st.write(f"**Reasons:** {reasons_text}")
-                                    st.write("---")
-                            else:
-                                st.info("No suspicious links found.")
-                    
-                    # زر تحميل التقرير
-                    if pdf_success:
-                        with open(pdf_path, "rb") as f:
-                            st.download_button(
-                                label="📄 Download PDF Report",
-                                data=f,
-                                file_name=pdf_path,
-                                mime="application/pdf",
-                                use_container_width=True
-                            )
-                        try:
-                            os.unlink(pdf_path)
-                        except:
-                            pass
+                        if report.get("link_findings"):
+                            with st.expander("Link Analysis Results"):
+                                for lf in report["link_findings"]:
+                                    if lf.get('reasons'):
+                                        st.warning(f"**Link:** {lf.get('link', '')}")
+                                        st.write(f"**Reasons:** {', '.join(lf['reasons'])}")
+                                        st.write("---")
+                        
+                        st.info("📄 PDF report feature coming soon!")
+                        
                 else:
-                    st.error("Failed to analyze the email. Please check the file format and try again.")
+                    st.error("Failed to analyze the email. Please check the file format.")
         
         except Exception as e:
-            st.error(f"An error occurred during analysis: {str(e)}")
+            st.error(f"An error occurred: {str(e)}")
     else:
-        # تعليمات الاستخدام عندما لا يكون هناك ملف مرفوع
         st.info("👆 Please upload a .eml file to begin analysis.")
-        
-        with st.expander("How to get a .eml file?"):
-            st.markdown("""
-            **From Gmail:**
-            1. Open the email you want to analyze
-            2. Click on the three dots (more options) in the top right
-            3. Select "Download message"
-            
-            **From Outlook:**
-            1. Right-click on the email in your inbox
-            2. Select "Save As"
-            3. Choose "Outlook Message Format (.eml)" as the file type
-            
-            **From Thunderbird:**
-            1. Right-click on the email
-            2. Select "Save As"
-            3. Choose "File" and save as .eml format
-            """)
 
 if __name__ == "__main__":
     main()
