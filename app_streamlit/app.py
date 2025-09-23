@@ -1,7 +1,6 @@
 import streamlit as st
 import os
 import plotly.graph_objects as go
-from analysis import run_analysis
 import analysis as analysis_module
 analysis_module.VT_API_KEY = os.getenv("VT_API_KEY", None)
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
@@ -9,6 +8,13 @@ from reportlab.lib.styles import getSampleStyleSheet
 from html import escape
 import tempfile
 import json
+import sys
+
+# Add the parent directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from analysis import run_analysis
+from report_utils import save_report_pdf, show_gauge
 
 # ===== حفظ التقرير كـ PDF =====
 def save_report_pdf(report, pdf_path):
