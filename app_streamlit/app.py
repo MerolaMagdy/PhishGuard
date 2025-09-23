@@ -243,6 +243,52 @@ def main():
                 # Process the file directly from memory
                 file_bytes = uploaded_file.getvalue()
                 report = run_analysis(file_bytes)
+                
+                if report:
+                    st.success("✅ Analysis completed successfully!")
+                    
+                    # Display results
+                    col1, col2 = st.columns([1, 2])
+                    
+                    with col1:
+                        st.subheader("Email Overview")
+                        show_gauge(report.get('risk_score', 0))
+                        st.info(f"**Risk Level:** {report.get('overall_risk', 'N/A')}")
+                        st.write("**Subject**")
+                        st.code(report.get("subject", "N/A"), language=None)
+                        st.write("**From**")
+                        st.code(report.get("from", "N/A"), language=None)
+                    
+                    with col2:
+                        st.subheader("Detailed Analysis")
+                        
+                        if report.get("header_findings"):
+                            with st.expander("Header Analysis Results"):
+                                for finding in report["header_findings"]:
+                                    st.write(f"• {finding}")
+                        
+                        if report.get("keyword_findings"):
+                            with st.expander("Keyword Analysis Results"):
+                                for finding in report["keyword_findings"]:
+                                    st.write(f"• {finding['keyword']}")
+                        
+                        if report.get("link_findings"):
+                            with st.expander("Link Analysis Results"):
+                                for lf in report["link_findings"]:
+                                    if lf.get('reasons'):
+                                        st.warning(f"**Link:** {lf.get('link', '')}")
+                                        st.write(f"**Reasons:** {', '.join(lf['reasons'])}")
+                                        st.write("---")
+                        
+                        st.info("📄 PDF report feature coming soon!")
+                        
+                else:
+                    st.error("Failed to analyze the email. Please check the file format.")
+        
+        except Exception as e:
+            st.error(f"An error occurred: {str(e)}")
+    else:
+        st.info("👆 Please upload a .eml file to begin analysis.")
 
 if __name__ == "__main__":
     main()
