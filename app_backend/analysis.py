@@ -1,4 +1,4 @@
-# analysis.py (improved + high risk weighting)
+# analysis.py (improved + risk reasons)
 import os
 import re
 import json
@@ -56,14 +56,10 @@ def cache_set(key, value):
 # ===== قراءة الإيميل =====
 def parse_eml(file_path):
     try:
-        # Check if file exists first
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
-            
         with open(file_path, "rb") as f:
             msg = BytesParser(policy=policy.default).parse(f)
-        
-        # Add None checks for header values
         subject = msg.get("subject", "No Subject") or "No Subject"
         from_addr = msg.get("from", "Unknown Sender") or "Unknown Sender"
         return_path = msg.get("return-path", from_addr) or from_addr
@@ -83,7 +79,6 @@ def parse_eml(file_path):
                     try:
                         content = part.get_content()
                         if content:
-                            # Better HTML to text conversion
                             cleaned_content = re.sub('<[^<]+?>', ' ', str(content))
                             body_text += unescape(cleaned_content)
                     except Exception as e:
@@ -94,9 +89,7 @@ def parse_eml(file_path):
                 body_text = str(content) if content else ""
             except Exception as e:
                 print(f"Warning: Could not extract content: {e}")
-                
         return subject, from_addr, return_path, body_text
-        
     except Exception as e:
         print(f"Error parsing EML file {file_path}: {e}")
         return "Error", "Error", "Error", ""
@@ -144,7 +137,6 @@ def vt_check_url(url):
         if not analysis_id:
             cache_set(cache_key, {"error": "no_analysis_id", "raw": j})
             return {"error": "no_analysis_id", "raw": j}
-
         analysis_url = f"https://www.virustotal.com/api/v3/analyses/{analysis_id}"
         for _ in range(6):
             r2 = requests.get(analysis_url, headers=headers, timeout=15)
@@ -241,37 +233,47 @@ def analyze_keywords(body_text):
 def run_analysis(file_path):
     try:
         file_path = os.path.abspath(file_path)
-        
-        # Check if file exists first
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
-            
+
         subject, from_addr, return_path, body_text = parse_eml(file_path)
-        
-        # Check if parsing was successful
         if subject == "Error" or body_text == "":
             raise Exception("Failed to parse EML file content")
-            
+
         links = extract_links(body_text)
         link_findings = analyze_links(links)
         keyword_findings = analyze_keywords(body_text)
         header_findings = analyze_headers(from_addr, return_path)
 
-        # ===== حساب Risk Score (High Risk version) =====
+        # ===== حساب Risk Score + تجميع الأسباب =====
         score = 0
+        risk_reasons = []
+
         if any("Spoofed sender" in f for f in header_findings):
             score += 30
-        score += min(35, 5 * len(keyword_findings))  # رفع من 25 → 35
+            risk_reasons.append("Header mismatch: From vs Return-Path (+30)")
+
+        if keyword_findings:
+            kw_points = min(35, 5 * len(keyword_findings))
+            score += kw_points
+            risk_reasons.append(f"Suspicious keywords found (+{kw_points})")
+
         for lf in link_findings:
             if lf.get("malicious_votes", 0) > 0:
                 score += 40
+                risk_reasons.append(f"Link flagged by VirusTotal (+40): {lf.get('link')}")
             else:
                 if "Uses IP instead of domain" in lf.get("reasons", []):
                     score += 20
+                    risk_reasons.append(f"Link uses IP instead of domain (+20): {lf.get('link')}")
                 if any("login" in r.lower() or "verify" in r.lower() for r in lf.get("reasons", [])):
                     score += 15
+                    risk_reasons.append(f"Suspicious login/verify path (+15): {lf.get('link')}")
+
         if len(header_findings) > 1:
             score += 5
+            risk_reasons.append("Multiple header anomalies (+5)")
+
         if score > 100:
             score = 100
 
@@ -290,8 +292,9 @@ def run_analysis(file_path):
             "link_findings": link_findings,
             "risk_score": score,
             "overall_risk": overall_risk,
+            "risk_reasons": risk_reasons   # ← الأسباب هنا
         }
-        
+
     except Exception as e:
         print(f"Error in run_analysis for {file_path}: {e}")
         return None
