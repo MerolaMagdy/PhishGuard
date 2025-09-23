@@ -197,6 +197,21 @@ def analyze_keywords(body_text):
     return findings
 
 # ===== تشغيل التحليل + High Risk weighting =====
+# Debug info
+st.write(f"🔍 Debug: File path: {temp_path}")
+st.write(f"🔍 Debug: File exists: {os.path.exists(temp_path)}")
+
+if os.path.exists(temp_path):
+    try:
+        with open(temp_path, 'rb') as f:
+            file_size = len(f.read())
+        st.write(f"🔍 Debug: File size: {file_size} bytes")
+    except Exception as e:
+        st.error(f"❌ File read test failed: {e}")
+        return
+
+# Then call run_analysis
+report = run_analysis(temp_path)
 def run_analysis(file_path):
     file_path = os.path.abspath(file_path)
     subject, from_addr, return_path, body_text = parse_eml(file_path)
@@ -247,3 +262,4 @@ if __name__ == "__main__":
     with open("report.json", "w", encoding="utf-8") as f:
         json.dump(r, f, indent=4, ensure_ascii=False)
     print(json.dumps(r, indent=4, ensure_ascii=False))
+
