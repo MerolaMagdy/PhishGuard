@@ -123,7 +123,7 @@ def main():
     # قسم رفع الملف
     uploaded_file = st.file_uploader("Choose a .eml file", type=["eml"], help="Select an email file in .eml format to analyze")
     
-     if uploaded_file is not None:
+    if uploaded_file is not None:
         try:
             with st.spinner("Analyzing email content..."):
                 # حفظ الملف مؤقتاً
