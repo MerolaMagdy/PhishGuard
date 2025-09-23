@@ -124,15 +124,18 @@ def main():
     uploaded_file = st.file_uploader("Choose a .eml file", type=["eml"], help="Select an email file in .eml format to analyze")
     
     if uploaded_file is not None:
-        try:
-            with st.spinner("Analyzing email content..."):
-                # حفظ الملف مؤقتاً
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".eml") as tmp_file:
-                    tmp_file.write(uploaded_file.getvalue())
-                    temp_path = tmp_file.name
-                
-                # تحليل الملف
-                report = run_analysis(temp_path)
+    try:
+        with st.spinner("Analyzing email content..."):
+            # حفظ الملف مؤقتاً
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".eml") as tmp_file:
+                tmp_file.write(uploaded_file.getvalue())
+                temp_path = tmp_file.name
+            
+            st.write(f"📁 Temporary file created at: {temp_path}")
+            st.write(f"📄 File exists: {os.path.exists(temp_path)}")
+            
+            # تحليل الملف
+            report = run_analysis(temp_path)
                 
                 # تنظيف الملف المؤقت
                 try:
