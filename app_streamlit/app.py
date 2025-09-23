@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 import plotly.graph_objects as go
-from .analysis import run_analysis
+from analysis import run_analysis
 import analysis as analysis_module
 analysis_module.VT_API_KEY = os.getenv("VT_API_KEY", None)
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
