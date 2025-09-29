@@ -1,5 +1,4 @@
-# analysis.py  (PhishGuard – cleaner link display)
-
+# analysis.py  –  PhishGuard with link categorization
 import os
 import re
 import json
@@ -13,10 +12,10 @@ from email.parser import BytesParser
 from html import unescape
 
 # ---------- CONFIG ----------
-VT_API_KEY = None
+VT_API_KEY = None  # add your key if you have one
 VT_API_URL = "https://www.virustotal.com/api/v3/urls"
 CACHE_DB = "vt_cache.sqlite"
-CACHE_TTL = 60 * 60 * 24  # 24-hour cache
+CACHE_TTL = 60 * 60 * 24  # 24 hours
 # ----------------------------
 
 # ---------- Cache ----------
@@ -54,7 +53,7 @@ def cache_set(key, value):
                 (key, json.dumps(value), int(time.time())))
     cache_conn.commit()
 
-# ---------- Read EML ----------
+# ---------- Parse EML ----------
 def parse_eml(file_path):
     with open(file_path, "rb") as f:
         msg = BytesParser(policy=policy.default).parse(f)
@@ -134,54 +133,80 @@ def vt_check_url(url):
         cache_set(cache_key, {"error": "exception", "msg": str(e)})
         return {"error": "exception", "msg": str(e)}
 
-# ---------- Link Analysis ----------
+# ---------- Link Categorization ----------
+def categorize_link(link):
+    """Return a human-friendly label for known link types."""
+    parsed = urlparse(link)
+    host = parsed.netloc.lower()
+    path = parsed.path.lower()
+
+    if "hubspot" in host:
+        return "HubSpot tracking / marketing link"
+    if "ngrok.com" in host:
+        return "Ngrok asset or hosted resource"
+    if path.endswith(".woff") or host.endswith(".woff"):
+        return "Web font file"
+    if path.endswith((".jpg", ".jpeg", ".png", ".gif", ".svg")):
+        return "Image resource"
+    if path.endswith((".css", ".js")):
+        return "Static script or stylesheet"
+    return None  # generic/unknown
+
+# ---------- Analyze Links ----------
 def analyze_links(links):
+    seen = set()
     results = []
     for link in links:
+        if link in seen:
+            continue
+        seen.add(link)
+
         try:
             parsed = urlparse(link)
             netloc = parsed.netloc.split(":")[0]
             ext = tldextract.extract(netloc)
             domain = f"{ext.domain}.{ext.suffix}" if ext.suffix else ext.domain
 
-            entry = {
-                "link": link,
-                # display shorter version: scheme + domain + first path segment
-                "display_link": (
-                    f"{parsed.scheme}://{parsed.netloc}/…"
-                    if len(link) > 60 else link
-                ),
-                "domain": domain,
-                "reasons": []
-            }
-
+            reasons = []
+            # suspicious indicators
             if is_ip_domain(netloc):
-                entry["reasons"].append("Uses IP instead of domain")
+                reasons.append("Uses IP instead of domain")
             if not ext.suffix:
-                entry["reasons"].append("No valid TLD")
+                reasons.append("No valid TLD")
             if "@" in link:
-                entry["reasons"].append("URL contains @ (possible redirect/trick)")
+                reasons.append("URL contains @ (possible redirect/trick)")
             if re.search(r"-login|secure-login|update-account|verify-account", link, re.I):
-                entry["reasons"].append("URL path looks like credential phishing")
+                reasons.append("URL path looks like credential phishing")
 
+            # VirusTotal
             vt_res = vt_check_url(link)
             if vt_res and "error" not in vt_res:
                 stats = vt_res.get("stats") or {}
                 votes = stats.get("malicious", 0) + stats.get("suspicious", 0)
-                entry["vt_stats"] = stats
-                entry["malicious_votes"] = votes
                 if votes > 0:
-                    entry["reasons"].append(f"VirusTotal flagged ({votes} engines)")
-            elif vt_res:
-                entry["vt_error"] = vt_res.get("error")
+                    reasons.append(f"VirusTotal flagged ({votes} engines)")
 
-            results.append(entry)
+            # friendly category if no obvious threat
+            label = categorize_link(link)
+            if label:
+                reasons.append(label)
+            if not reasons:
+                reasons.append("No specific reason")
+
+            results.append({
+                "link": link,
+                "domain": domain,
+                "reasons": reasons
+            })
         except Exception as e:
-            results.append({"link": link, "display_link": link,
-                            "reason": "analysis_exception", "msg": str(e)})
+            results.append({
+                "link": link,
+                "domain": "",
+                "reasons": [f"analysis error: {e}"]
+            })
     return results
 
-# ---------- Header & Keyword Analysis ----------
+# ---------- Header & Keywords ----------
 def analyze_headers(from_addr, return_path):
     findings = []
     if from_addr and return_path:
@@ -221,12 +246,12 @@ def run_analysis(file_path):
         score += 30
     score += min(35, 5 * len(keyword_findings))
     for lf in link_findings:
-        if lf.get("malicious_votes", 0) > 0:
+        if any("VirusTotal flagged" in r for r in lf["reasons"]):
             score += 40
         else:
-            if "Uses IP instead of domain" in lf.get("reasons", []):
+            if "Uses IP instead of domain" in lf["reasons"]:
                 score += 20
-            if any("login" in r.lower() or "verify" in r.lower() for r in lf.get("reasons", [])):
+            if any("login" in r.lower() or "verify" in r.lower() for r in lf["reasons"]):
                 score += 15
     if len(header_findings) > 1:
         score += 5
