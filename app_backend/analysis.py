@@ -1,4 +1,4 @@
-# analysis.py (improved + risk reasons)
+# analysis.py (improved + high risk weighting)
 import os
 import re
 import json
@@ -55,44 +55,23 @@ def cache_set(key, value):
 
 # ===== قراءة الإيميل =====
 def parse_eml(file_path):
-    try:
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found: {file_path}")
-        with open(file_path, "rb") as f:
-            msg = BytesParser(policy=policy.default).parse(f)
-        subject = msg.get("subject", "No Subject") or "No Subject"
-        from_addr = msg.get("from", "Unknown Sender") or "Unknown Sender"
-        return_path = msg.get("return-path", from_addr) or from_addr
+    with open(file_path, "rb") as f:
+        msg = BytesParser(policy=policy.default).parse(f)
+    subject = msg["subject"]
+    from_addr = msg["from"]
+    return_path = msg["return-path"]
 
-        body_text = ""
-        if msg.is_multipart():
-            for part in msg.walk():
-                ctype = part.get_content_type()
-                if ctype == "text/plain":
-                    try:
-                        content = part.get_content()
-                        if content:
-                            body_text += str(content)
-                    except Exception as e:
-                        print(f"Warning: Could not extract text/plain content: {e}")
-                elif ctype == "text/html":
-                    try:
-                        content = part.get_content()
-                        if content:
-                            cleaned_content = re.sub('<[^<]+?>', ' ', str(content))
-                            body_text += unescape(cleaned_content)
-                    except Exception as e:
-                        print(f"Warning: Could not extract text/html content: {e}")
-        else:
-            try:
-                content = msg.get_content()
-                body_text = str(content) if content else ""
-            except Exception as e:
-                print(f"Warning: Could not extract content: {e}")
-        return subject, from_addr, return_path, body_text
-    except Exception as e:
-        print(f"Error parsing EML file {file_path}: {e}")
-        return "Error", "Error", "Error", ""
+    body_text = ""
+    if msg.is_multipart():
+        for part in msg.walk():
+            ctype = part.get_content_type()
+            if ctype == "text/plain":
+                body_text += part.get_content() or ""
+            elif ctype == "text/html":
+                body_text += unescape(re.sub('<[^<]+?>', ' ', part.get_content() or ""))
+    else:
+        body_text = msg.get_content() or ""
+    return subject, from_addr, return_path, body_text
 
 # ===== استخراج الروابط =====
 URL_REGEX = re.compile(r"""(?ix)\b((?:https?://|www\.)[^\s<>"'()]+)""")
@@ -100,25 +79,18 @@ URL_REGEX = re.compile(r"""(?ix)\b((?:https?://|www\.)[^\s<>"'()]+)""")
 def extract_links(text):
     if not text:
         return []
-    try:
-        text = unescape(text)
-        links = URL_REGEX.findall(text)
-        cleaned = []
-        for l in links:
-            l = l.rstrip(".,;:!)\"'")
-            if l.startswith("www."):
-                l = "http://" + l
-            cleaned.append(l)
-        return list(dict.fromkeys(cleaned))
-    except Exception as e:
-        print(f"Error extracting links: {e}")
-        return []
+    text = unescape(text)
+    links = URL_REGEX.findall(text)
+    cleaned = []
+    for l in links:
+        l = l.rstrip(".,;:!)\"'")
+        if l.startswith("www."):
+            l = "http://" + l
+        cleaned.append(l)
+    return list(dict.fromkeys(cleaned))
 
 def is_ip_domain(netloc):
-    try:
-        return re.match(r"^\d{1,3}(\.\d{1,3}){3}$", netloc) is not None
-    except:
-        return False
+    return re.match(r"^\d{1,3}(\.\d{1,3}){3}$", netloc) is not None
 
 # ===== VirusTotal URL check =====
 def vt_check_url(url):
@@ -137,6 +109,7 @@ def vt_check_url(url):
         if not analysis_id:
             cache_set(cache_key, {"error": "no_analysis_id", "raw": j})
             return {"error": "no_analysis_id", "raw": j}
+
         analysis_url = f"https://www.virustotal.com/api/v3/analyses/{analysis_id}"
         for _ in range(6):
             r2 = requests.get(analysis_url, headers=headers, timeout=15)
@@ -199,14 +172,11 @@ def analyze_links(links):
 # ===== تحليل الهيدر =====
 def analyze_headers(from_addr, return_path):
     findings = []
-    try:
-        if from_addr and return_path:
-            from_str = ", ".join(from_addr) if isinstance(from_addr, (list, tuple)) else str(from_addr)
-            rp = ", ".join(return_path) if isinstance(return_path, (list, tuple)) else str(return_path)
-            if rp and from_str and rp.lower() not in from_str.lower():
-                findings.append(f"Spoofed sender? From: {from_str} vs Return-Path: {rp}")
-    except Exception as e:
-        print(f"Error analyzing headers: {e}")
+    if from_addr and return_path:
+        from_str = ", ".join(from_addr) if isinstance(from_addr, (list, tuple)) else str(from_addr)
+        rp = ", ".join(return_path) if isinstance(return_path, (list, tuple)) else str(return_path)
+        if rp and from_str and rp.lower() not in from_str.lower():
+            findings.append(f"Spoofed sender? From: {from_str} vs Return-Path: {rp}")
     return findings
 
 # ===== تحليل الكلمات المفتاحية =====
@@ -214,90 +184,61 @@ def analyze_keywords(body_text):
     findings = []
     if not body_text:
         return findings
-    try:
-        body_lower = body_text.lower()
-        suspicious_keywords = ["urgent", "verify", "password", "account", "login",
-                               "click here", "update", "confirm", "bank", "social security", "ssn"]
-        for word in suspicious_keywords:
-            idx = body_lower.find(word)
-            if idx != -1:
-                start = max(0, idx - 30)
-                end = idx + len(word) + 30
-                snippet = body_text[start:end].replace("\n", " ")
-                findings.append({"keyword": word, "snippet": snippet.strip()})
-    except Exception as e:
-        print(f"Error analyzing keywords: {e}")
+    body_lower = body_text.lower()
+    suspicious_keywords = ["urgent", "verify", "password", "account", "login",
+                           "click here", "update", "confirm", "bank", "social security", "ssn"]
+    for word in suspicious_keywords:
+        idx = body_lower.find(word)
+        if idx != -1:
+            start = max(0, idx - 30)
+            end = idx + len(word) + 30
+            snippet = body_text[start:end].replace("\n", " ")
+            findings.append({"keyword": word, "snippet": snippet.strip()})
     return findings
 
 # ===== تشغيل التحليل + High Risk weighting =====
 def run_analysis(file_path):
-    try:
-        file_path = os.path.abspath(file_path)
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found: {file_path}")
+    file_path = os.path.abspath(file_path)
+    subject, from_addr, return_path, body_text = parse_eml(file_path)
+    links = extract_links(body_text)
+    link_findings = analyze_links(links)
+    keyword_findings = analyze_keywords(body_text)
+    header_findings = analyze_headers(from_addr, return_path)
 
-        subject, from_addr, return_path, body_text = parse_eml(file_path)
-        if subject == "Error" or body_text == "":
-            raise Exception("Failed to parse EML file content")
+    # ===== حساب Risk Score (High Risk version) =====
+    score = 0
+    if any("Spoofed sender" in f for f in header_findings):
+        score += 30
+    score += min(35, 5 * len(keyword_findings))  # رفع من 25 → 35
+    for lf in link_findings:
+        if lf.get("malicious_votes", 0) > 0:
+            score += 40
+        else:
+            if "Uses IP instead of domain" in lf.get("reasons", []):
+                score += 20
+            if any("login" in r.lower() or "verify" in r.lower() for r in lf.get("reasons", [])):
+                score += 15
+    if len(header_findings) > 1:
+        score += 5
+    if score > 100:
+        score = 100
 
-        links = extract_links(body_text)
-        link_findings = analyze_links(links)
-        keyword_findings = analyze_keywords(body_text)
-        header_findings = analyze_headers(from_addr, return_path)
+    overall_risk = "Low"
+    if score >= 70:
+        overall_risk = "High"
+    elif score >= 40:
+        overall_risk = "Medium"
 
-        # ===== حساب Risk Score + تجميع الأسباب =====
-        score = 0
-        risk_reasons = []
-
-        if any("Spoofed sender" in f for f in header_findings):
-            score += 30
-            risk_reasons.append("Header mismatch: From vs Return-Path (+30)")
-
-        if keyword_findings:
-            kw_points = min(35, 5 * len(keyword_findings))
-            score += kw_points
-            risk_reasons.append(f"Suspicious keywords found (+{kw_points})")
-
-        for lf in link_findings:
-            if lf.get("malicious_votes", 0) > 0:
-                score += 40
-                risk_reasons.append(f"Link flagged by VirusTotal (+40): {lf.get('link')}")
-            else:
-                if "Uses IP instead of domain" in lf.get("reasons", []):
-                    score += 20
-                    risk_reasons.append(f"Link uses IP instead of domain (+20): {lf.get('link')}")
-                if any("login" in r.lower() or "verify" in r.lower() for r in lf.get("reasons", [])):
-                    score += 15
-                    risk_reasons.append(f"Suspicious login/verify path (+15): {lf.get('link')}")
-
-        if len(header_findings) > 1:
-            score += 5
-            risk_reasons.append("Multiple header anomalies (+5)")
-
-        if score > 100:
-            score = 100
-
-        overall_risk = "Low"
-        if score >= 70:
-            overall_risk = "High"
-        elif score >= 40:
-            overall_risk = "Medium"
-
-        return {
-            "subject": subject,
-            "from": from_addr,
-            "return_path": return_path,
-            "header_findings": header_findings,
-            "keyword_findings": keyword_findings,
-            "link_findings": link_findings,
-            "risk_score": score,
-            "overall_risk": overall_risk,
-            "risk_reasons": risk_reasons   # ← الأسباب هنا
-        }
-
-    except Exception as e:
-        print(f"Error in run_analysis for {file_path}: {e}")
-        return None
+    return {
+        "subject": subject,
+        "from": from_addr,
+        "return_path": return_path,
+        "header_findings": header_findings,
+        "keyword_findings": keyword_findings,
+        "link_findings": link_findings,
+        "risk_score": score,
+        "overall_risk": overall_risk,
+    }
 
 if __name__ == "__main__":
     import sys
