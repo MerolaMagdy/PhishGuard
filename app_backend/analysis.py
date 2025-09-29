@@ -1,4 +1,5 @@
-# analysis.py (improved + high risk weighting)
+# analysis.py  (PhishGuard – cleaner link display)
+
 import os
 import re
 import json
@@ -12,13 +13,13 @@ from email.parser import BytesParser
 from html import unescape
 
 # ---------- CONFIG ----------
-VT_API_KEY = None  # ضع مفتاحك لو عندك
+VT_API_KEY = None
 VT_API_URL = "https://www.virustotal.com/api/v3/urls"
 CACHE_DB = "vt_cache.sqlite"
-CACHE_TTL = 60 * 60 * 24  # cache results 24 hours
+CACHE_TTL = 60 * 60 * 24  # 24-hour cache
 # ----------------------------
 
-# ---------- Cache sqlite ----------
+# ---------- Cache ----------
 def init_cache():
     conn = sqlite3.connect(CACHE_DB)
     cur = conn.cursor()
@@ -53,7 +54,7 @@ def cache_set(key, value):
                 (key, json.dumps(value), int(time.time())))
     cache_conn.commit()
 
-# ===== قراءة الإيميل =====
+# ---------- Read EML ----------
 def parse_eml(file_path):
     with open(file_path, "rb") as f:
         msg = BytesParser(policy=policy.default).parse(f)
@@ -73,7 +74,7 @@ def parse_eml(file_path):
         body_text = msg.get_content() or ""
     return subject, from_addr, return_path, body_text
 
-# ===== استخراج الروابط =====
+# ---------- Extract Links ----------
 URL_REGEX = re.compile(r"""(?ix)\b((?:https?://|www\.)[^\s<>"'()]+)""")
 
 def extract_links(text):
@@ -92,7 +93,7 @@ def extract_links(text):
 def is_ip_domain(netloc):
     return re.match(r"^\d{1,3}(\.\d{1,3}){3}$", netloc) is not None
 
-# ===== VirusTotal URL check =====
+# ---------- VirusTotal ----------
 def vt_check_url(url):
     if not VT_API_KEY:
         return None
@@ -133,16 +134,26 @@ def vt_check_url(url):
         cache_set(cache_key, {"error": "exception", "msg": str(e)})
         return {"error": "exception", "msg": str(e)}
 
-# ===== تحليل الروابط =====
+# ---------- Link Analysis ----------
 def analyze_links(links):
-    suspicious = []
+    results = []
     for link in links:
         try:
             parsed = urlparse(link)
             netloc = parsed.netloc.split(":")[0]
             ext = tldextract.extract(netloc)
             domain = f"{ext.domain}.{ext.suffix}" if ext.suffix else ext.domain
-            entry = {"link": link, "domain": domain, "reasons": []}
+
+            entry = {
+                "link": link,
+                # display shorter version: scheme + domain + first path segment
+                "display_link": (
+                    f"{parsed.scheme}://{parsed.netloc}/…"
+                    if len(link) > 60 else link
+                ),
+                "domain": domain,
+                "reasons": []
+            }
 
             if is_ip_domain(netloc):
                 entry["reasons"].append("Uses IP instead of domain")
@@ -151,25 +162,26 @@ def analyze_links(links):
             if "@" in link:
                 entry["reasons"].append("URL contains @ (possible redirect/trick)")
             if re.search(r"-login|secure-login|update-account|verify-account", link, re.I):
-                entry["reasons"].append("URL path looks like credential phishing (login/verify/update)")
+                entry["reasons"].append("URL path looks like credential phishing")
 
             vt_res = vt_check_url(link)
-            if vt_res:
-                if "error" not in vt_res:
-                    stats = vt_res.get("stats") or {}
-                    malicious_votes = stats.get("malicious", 0) + stats.get("suspicious", 0)
-                    entry["vt_stats"] = stats
-                    entry["malicious_votes"] = malicious_votes
-                    if malicious_votes > 0:
-                        entry["reasons"].append(f"VirusTotal flagged ({malicious_votes} engines)")
-                else:
-                    entry["vt_error"] = vt_res.get("error")
-            suspicious.append(entry)
-        except Exception as e:
-            suspicious.append({"link": link, "reason": "analysis_exception", "msg": str(e)})
-    return suspicious
+            if vt_res and "error" not in vt_res:
+                stats = vt_res.get("stats") or {}
+                votes = stats.get("malicious", 0) + stats.get("suspicious", 0)
+                entry["vt_stats"] = stats
+                entry["malicious_votes"] = votes
+                if votes > 0:
+                    entry["reasons"].append(f"VirusTotal flagged ({votes} engines)")
+            elif vt_res:
+                entry["vt_error"] = vt_res.get("error")
 
-# ===== تحليل الهيدر =====
+            results.append(entry)
+        except Exception as e:
+            results.append({"link": link, "display_link": link,
+                            "reason": "analysis_exception", "msg": str(e)})
+    return results
+
+# ---------- Header & Keyword Analysis ----------
 def analyze_headers(from_addr, return_path):
     findings = []
     if from_addr and return_path:
@@ -179,24 +191,23 @@ def analyze_headers(from_addr, return_path):
             findings.append(f"Spoofed sender? From: {from_str} vs Return-Path: {rp}")
     return findings
 
-# ===== تحليل الكلمات المفتاحية =====
 def analyze_keywords(body_text):
     findings = []
     if not body_text:
         return findings
-    body_lower = body_text.lower()
-    suspicious_keywords = ["urgent", "verify", "password", "account", "login",
-                           "click here", "update", "confirm", "bank", "social security", "ssn"]
-    for word in suspicious_keywords:
-        idx = body_lower.find(word)
+    lower = body_text.lower()
+    suspicious = ["urgent", "verify", "password", "account", "login",
+                  "click here", "update", "confirm", "bank", "social security", "ssn"]
+    for w in suspicious:
+        idx = lower.find(w)
         if idx != -1:
             start = max(0, idx - 30)
-            end = idx + len(word) + 30
+            end = idx + len(w) + 30
             snippet = body_text[start:end].replace("\n", " ")
-            findings.append({"keyword": word, "snippet": snippet.strip()})
+            findings.append({"keyword": w, "snippet": snippet.strip()})
     return findings
 
-# ===== تشغيل التحليل + High Risk weighting =====
+# ---------- Main Risk Scoring ----------
 def run_analysis(file_path):
     file_path = os.path.abspath(file_path)
     subject, from_addr, return_path, body_text = parse_eml(file_path)
@@ -205,11 +216,10 @@ def run_analysis(file_path):
     keyword_findings = analyze_keywords(body_text)
     header_findings = analyze_headers(from_addr, return_path)
 
-    # ===== حساب Risk Score (High Risk version) =====
     score = 0
     if any("Spoofed sender" in f for f in header_findings):
         score += 30
-    score += min(35, 5 * len(keyword_findings))  # رفع من 25 → 35
+    score += min(35, 5 * len(keyword_findings))
     for lf in link_findings:
         if lf.get("malicious_votes", 0) > 0:
             score += 40
@@ -223,11 +233,11 @@ def run_analysis(file_path):
     if score > 100:
         score = 100
 
-    overall_risk = "Low"
+    risk = "Low"
     if score >= 70:
-        overall_risk = "High"
+        risk = "High"
     elif score >= 40:
-        overall_risk = "Medium"
+        risk = "Medium"
 
     return {
         "subject": subject,
@@ -237,13 +247,13 @@ def run_analysis(file_path):
         "keyword_findings": keyword_findings,
         "link_findings": link_findings,
         "risk_score": score,
-        "overall_risk": overall_risk,
+        "overall_risk": risk,
     }
 
 if __name__ == "__main__":
     import sys
     fp = sys.argv[1] if len(sys.argv) > 1 else "sample.eml"
-    r = run_analysis(fp)
+    result = run_analysis(fp)
     with open("report.json", "w", encoding="utf-8") as f:
-        json.dump(r, f, indent=4, ensure_ascii=False)
-    print(json.dumps(r, indent=4, ensure_ascii=False))
+        json.dump(result, f, indent=4, ensure_ascii=False)
+    print(json.dumps(result, indent=4, ensure_ascii=False))
