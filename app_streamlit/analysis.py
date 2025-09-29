@@ -1,21 +1,15 @@
-# analysis.py  –  PhishGuard with link categorization
-import os
-import re
-import json
-import time
-import sqlite3
-import tldextract
-import requests
+# analysis.py  –  PhishGuard with link categorization + safety status
+import os, re, json, time, sqlite3, requests, tldextract
 from urllib.parse import urlparse
 from email import policy
 from email.parser import BytesParser
 from html import unescape
 
 # ---------- CONFIG ----------
-VT_API_KEY = None  # add your key if you have one
+VT_API_KEY = None   # add your VirusTotal API key if available
 VT_API_URL = "https://www.virustotal.com/api/v3/urls"
 CACHE_DB = "vt_cache.sqlite"
-CACHE_TTL = 60 * 60 * 24  # 24 hours
+CACHE_TTL = 60 * 60 * 24
 # ----------------------------
 
 # ---------- Cache ----------
@@ -38,8 +32,7 @@ def cache_get(key):
     cur = cache_conn.cursor()
     cur.execute("SELECT response, ts FROM vt_cache WHERE key=?", (key,))
     row = cur.fetchone()
-    if not row:
-        return None
+    if not row: return None
     response, ts = row
     if time.time() - ts > CACHE_TTL:
         cur.execute("DELETE FROM vt_cache WHERE key=?", (key,))
@@ -107,8 +100,8 @@ def vt_check_url(url):
         j = resp.json()
         analysis_id = j.get("data", {}).get("id")
         if not analysis_id:
-            cache_set(cache_key, {"error": "no_analysis_id", "raw": j})
-            return {"error": "no_analysis_id", "raw": j}
+            cache_set(cache_key, {"error": "no_analysis_id"})
+            return {"error": "no_analysis_id"}
 
         analysis_url = f"https://www.virustotal.com/api/v3/analyses/{analysis_id}"
         for _ in range(6):
@@ -118,12 +111,7 @@ def vt_check_url(url):
             status = j2.get("data", {}).get("attributes", {}).get("status")
             if status == "completed":
                 stats = j2.get("data", {}).get("attributes", {}).get("stats", {})
-                result = {
-                    "analysis_id": analysis_id,
-                    "status": status,
-                    "stats": stats,
-                    "raw_analysis": j2
-                }
+                result = {"stats": stats}
                 cache_set(cache_key, result)
                 return result
             time.sleep(2)
@@ -133,24 +121,17 @@ def vt_check_url(url):
         cache_set(cache_key, {"error": "exception", "msg": str(e)})
         return {"error": "exception", "msg": str(e)}
 
-# ---------- Link Categorization ----------
+# ---------- Categorize ----------
 def categorize_link(link):
-    """Return a human-friendly label for known link types."""
     parsed = urlparse(link)
     host = parsed.netloc.lower()
     path = parsed.path.lower()
-
-    if "hubspot" in host:
-        return "HubSpot tracking / marketing link"
-    if "ngrok.com" in host:
-        return "Ngrok asset or hosted resource"
-    if path.endswith(".woff") or host.endswith(".woff"):
-        return "Web font file"
-    if path.endswith((".jpg", ".jpeg", ".png", ".gif", ".svg")):
-        return "Image resource"
-    if path.endswith((".css", ".js")):
-        return "Static script or stylesheet"
-    return None  # generic/unknown
+    if "hubspot" in host: return "HubSpot tracking / marketing link"
+    if "ngrok.com" in host: return "Ngrok asset or hosted resource"
+    if path.endswith(".woff"): return "Web font file"
+    if path.endswith((".jpg",".jpeg",".png",".gif",".svg")): return "Image resource"
+    if path.endswith((".css",".js")): return "Static script or stylesheet"
+    return None
 
 # ---------- Analyze Links ----------
 def analyze_links(links):
@@ -168,7 +149,7 @@ def analyze_links(links):
             domain = f"{ext.domain}.{ext.suffix}" if ext.suffix else ext.domain
 
             reasons = []
-            # suspicious indicators
+            # heuristics
             if is_ip_domain(netloc):
                 reasons.append("Uses IP instead of domain")
             if not ext.suffix:
@@ -179,30 +160,42 @@ def analyze_links(links):
                 reasons.append("URL path looks like credential phishing")
 
             # VirusTotal
+            vt_votes = 0
             vt_res = vt_check_url(link)
             if vt_res and "error" not in vt_res:
                 stats = vt_res.get("stats") or {}
-                votes = stats.get("malicious", 0) + stats.get("suspicious", 0)
-                if votes > 0:
-                    reasons.append(f"VirusTotal flagged ({votes} engines)")
+                vt_votes = stats.get("malicious", 0) + stats.get("suspicious", 0)
+                if vt_votes > 0:
+                    reasons.append(f"VirusTotal flagged ({vt_votes} engines)")
 
-            # friendly category if no obvious threat
+            # friendly label
             label = categorize_link(link)
             if label:
                 reasons.append(label)
+
             if not reasons:
                 reasons.append("No specific reason")
+
+            # ---- Safety flag ----
+            safe_status = "Safe"
+            if vt_votes > 0 or any(
+                kw.lower() in " ".join(reasons).lower()
+                for kw in ["phishing", "flagged", "no valid tld", "uses ip"]
+            ):
+                safe_status = "Suspicious"
 
             results.append({
                 "link": link,
                 "domain": domain,
-                "reasons": reasons
+                "reasons": reasons,
+                "status": safe_status
             })
         except Exception as e:
             results.append({
                 "link": link,
                 "domain": "",
-                "reasons": [f"analysis error: {e}"]
+                "reasons": [f"analysis error: {e}"],
+                "status": "Suspicious"
             })
     return results
 
@@ -210,29 +203,26 @@ def analyze_links(links):
 def analyze_headers(from_addr, return_path):
     findings = []
     if from_addr and return_path:
-        from_str = ", ".join(from_addr) if isinstance(from_addr, (list, tuple)) else str(from_addr)
-        rp = ", ".join(return_path) if isinstance(return_path, (list, tuple)) else str(return_path)
-        if rp and from_str and rp.lower() not in from_str.lower():
-            findings.append(f"Spoofed sender? From: {from_str} vs Return-Path: {rp}")
+        fstr = ", ".join(from_addr) if isinstance(from_addr,(list,tuple)) else str(from_addr)
+        rp   = ", ".join(return_path) if isinstance(return_path,(list,tuple)) else str(return_path)
+        if rp and fstr and rp.lower() not in fstr.lower():
+            findings.append(f"Spoofed sender? From: {fstr} vs Return-Path: {rp}")
     return findings
 
 def analyze_keywords(body_text):
     findings = []
-    if not body_text:
-        return findings
+    if not body_text: return findings
     lower = body_text.lower()
-    suspicious = ["urgent", "verify", "password", "account", "login",
-                  "click here", "update", "confirm", "bank", "social security", "ssn"]
+    suspicious = ["urgent","verify","password","account","login",
+                  "click here","update","confirm","bank","social security","ssn"]
     for w in suspicious:
         idx = lower.find(w)
         if idx != -1:
-            start = max(0, idx - 30)
-            end = idx + len(w) + 30
-            snippet = body_text[start:end].replace("\n", " ")
+            snippet = body_text[max(0,idx-30):idx+len(w)+30].replace("\n"," ")
             findings.append({"keyword": w, "snippet": snippet.strip()})
     return findings
 
-# ---------- Main Risk Scoring ----------
+# ---------- Risk Scoring ----------
 def run_analysis(file_path):
     file_path = os.path.abspath(file_path)
     subject, from_addr, return_path, body_text = parse_eml(file_path)
@@ -242,27 +232,17 @@ def run_analysis(file_path):
     header_findings = analyze_headers(from_addr, return_path)
 
     score = 0
-    if any("Spoofed sender" in f for f in header_findings):
-        score += 30
+    if any("Spoofed sender" in f for f in header_findings): score += 30
     score += min(35, 5 * len(keyword_findings))
     for lf in link_findings:
-        if any("VirusTotal flagged" in r for r in lf["reasons"]):
-            score += 40
-        else:
-            if "Uses IP instead of domain" in lf["reasons"]:
-                score += 20
-            if any("login" in r.lower() or "verify" in r.lower() for r in lf["reasons"]):
-                score += 15
-    if len(header_findings) > 1:
-        score += 5
-    if score > 100:
-        score = 100
+        if lf["status"] == "Suspicious":  # weight suspicious links
+            score += 20
+    if len(header_findings) > 1: score += 5
+    if score > 100: score = 100
 
     risk = "Low"
-    if score >= 70:
-        risk = "High"
-    elif score >= 40:
-        risk = "Medium"
+    if score >= 70: risk = "High"
+    elif score >= 40: risk = "Medium"
 
     return {
         "subject": subject,
