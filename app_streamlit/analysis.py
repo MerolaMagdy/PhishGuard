@@ -1,4 +1,4 @@
-# analysis.py  –  PhishGuard with link categorization + safety status
+# analysis.py  –  PhishGuard with explicit Safe / Suspicious status
 import os, re, json, time, sqlite3, requests, tldextract
 from urllib.parse import urlparse
 from email import policy
@@ -6,7 +6,7 @@ from email.parser import BytesParser
 from html import unescape
 
 # ---------- CONFIG ----------
-VT_API_KEY = None   # add your VirusTotal API key if available
+VT_API_KEY = None  # put your VirusTotal key here if you have one
 VT_API_URL = "https://www.virustotal.com/api/v3/urls"
 CACHE_DB = "vt_cache.sqlite"
 CACHE_TTL = 60 * 60 * 24
@@ -111,9 +111,8 @@ def vt_check_url(url):
             status = j2.get("data", {}).get("attributes", {}).get("status")
             if status == "completed":
                 stats = j2.get("data", {}).get("attributes", {}).get("stats", {})
-                result = {"stats": stats}
-                cache_set(cache_key, result)
-                return result
+                cache_set(cache_key, {"stats": stats})
+                return {"stats": stats}
             time.sleep(2)
         cache_set(cache_key, {"error": "analysis_timeout"})
         return {"error": "analysis_timeout"}
@@ -129,11 +128,11 @@ def categorize_link(link):
     if "hubspot" in host: return "HubSpot tracking / marketing link"
     if "ngrok.com" in host: return "Ngrok asset or hosted resource"
     if path.endswith(".woff"): return "Web font file"
-    if path.endswith((".jpg",".jpeg",".png",".gif",".svg")): return "Image resource"
-    if path.endswith((".css",".js")): return "Static script or stylesheet"
+    if path.endswith((".jpg", ".jpeg", ".png", ".gif", ".svg")): return "Image resource"
+    if path.endswith((".css", ".js")): return "Static script or stylesheet"
     return None
 
-# ---------- Analyze Links ----------
+# ---------- Analyze Links with Safe/Suspicious ----------
 def analyze_links(links):
     seen = set()
     results = []
@@ -149,17 +148,21 @@ def analyze_links(links):
             domain = f"{ext.domain}.{ext.suffix}" if ext.suffix else ext.domain
 
             reasons = []
-            # heuristics
+            suspicious_flag = False  # track heuristics
+
             if is_ip_domain(netloc):
                 reasons.append("Uses IP instead of domain")
+                suspicious_flag = True
             if not ext.suffix:
                 reasons.append("No valid TLD")
+                suspicious_flag = True
             if "@" in link:
                 reasons.append("URL contains @ (possible redirect/trick)")
+                suspicious_flag = True
             if re.search(r"-login|secure-login|update-account|verify-account", link, re.I):
                 reasons.append("URL path looks like credential phishing")
+                suspicious_flag = True
 
-            # VirusTotal
             vt_votes = 0
             vt_res = vt_check_url(link)
             if vt_res and "error" not in vt_res:
@@ -167,8 +170,8 @@ def analyze_links(links):
                 vt_votes = stats.get("malicious", 0) + stats.get("suspicious", 0)
                 if vt_votes > 0:
                     reasons.append(f"VirusTotal flagged ({vt_votes} engines)")
+                    suspicious_flag = True
 
-            # friendly label
             label = categorize_link(link)
             if label:
                 reasons.append(label)
@@ -176,19 +179,14 @@ def analyze_links(links):
             if not reasons:
                 reasons.append("No specific reason")
 
-            # ---- Safety flag ----
-            safe_status = "Safe"
-            if vt_votes > 0 or any(
-                kw.lower() in " ".join(reasons).lower()
-                for kw in ["phishing", "flagged", "no valid tld", "uses ip"]
-            ):
-                safe_status = "Suspicious"
+            # FINAL SAFE / SUSPICIOUS STATUS
+            status = "Safe" if (vt_votes == 0 and not suspicious_flag) else "Suspicious"
 
             results.append({
                 "link": link,
                 "domain": domain,
                 "reasons": reasons,
-                "status": safe_status
+                "status": status
             })
         except Exception as e:
             results.append({
@@ -199,7 +197,7 @@ def analyze_links(links):
             })
     return results
 
-# ---------- Header & Keywords ----------
+# ---------- Headers & Keywords ----------
 def analyze_headers(from_addr, return_path):
     findings = []
     if from_addr and return_path:
@@ -222,7 +220,7 @@ def analyze_keywords(body_text):
             findings.append({"keyword": w, "snippet": snippet.strip()})
     return findings
 
-# ---------- Risk Scoring ----------
+# ---------- Risk Score ----------
 def run_analysis(file_path):
     file_path = os.path.abspath(file_path)
     subject, from_addr, return_path, body_text = parse_eml(file_path)
@@ -235,7 +233,7 @@ def run_analysis(file_path):
     if any("Spoofed sender" in f for f in header_findings): score += 30
     score += min(35, 5 * len(keyword_findings))
     for lf in link_findings:
-        if lf["status"] == "Suspicious":  # weight suspicious links
+        if lf["status"] == "Suspicious":
             score += 20
     if len(header_findings) > 1: score += 5
     if score > 100: score = 100
